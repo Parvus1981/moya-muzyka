@@ -1,0 +1,3 @@
+# Static app: no build step, Netlify publishes the ready files from /public
+[build]
+  publish = "public"
