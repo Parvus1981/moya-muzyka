@@ -4,3 +4,6 @@
 
 - `public/` — готовое приложение, его публикует Netlify
 - `src/player.html` — исходник плеера, `src/build.py` собирает из него `public/`
+- `src/dj.html`, `src/dj.css`, `src/dj.js` — DJ-пульт (две деки, EQ, фильтр, кроссфейдер, BPM, SYNC, петли); `build.py` вставляет их в `public/index.html`
+
+Сборка: `cd src && python3 build.py <номер версии>`

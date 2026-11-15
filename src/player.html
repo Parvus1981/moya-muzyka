@@ -292,6 +292,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
   body.car .vol { display: flex; }
   body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 }
+/*DJ_CSS*/
 </style>
 
 <div class="wrap">
@@ -302,6 +303,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     </div>
     <div class="hbtns">
     <button class="ghost" id="carBtn" type="button">Авто</button>
+    <button class="ghost" id="djBtn" type="button">DJ</button>
     <button class="ghost" id="setBtn" type="button">Настройки</button>
     <label class="btn" for="fileInput" id="addBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -464,6 +466,10 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
       <div class="chips" id="tsFav"></div>
     </section>
     <section>
+      <h3>DJ-пульт</h3>
+      <div class="chips" id="tsDj"></div>
+    </section>
+    <section>
       <h3>Очередь</h3>
       <div class="chips" id="tsQ"></div>
       <div class="hint2" id="tsQInfo"></div>
@@ -484,6 +490,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
   </div>
 </div>
 
+<!--DJ_HTML-->
 <script>
 (function () {
   var $ = function (s) { return document.querySelector(s); };
@@ -1239,6 +1246,8 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     var t = find(tsId);
     if (!t) { closeSheet(); return; }
     $('#tsTitle').textContent = t.title;
+    fillChips('#tsDj', isVidish(t) ? [] : [{ k: 'a', label: 'На деку A' }, { k: 'b', label: 'На деку B' }], function () { return false; },
+      function (it) { closeSheet(); if (window.DJ) window.DJ.load(it.k, t.id); });
     fillChips('#tsFav', [{ label: t.fav ? 'В избранном' : 'Добавить в избранное' }], function () { return !!t.fav; }, function () { toggleFav(t); });
     var qi = upNext.indexOf(t.id), qItems = [{ k: 'add', label: 'Добавить в очередь' }];
     if (upNext.length) qItems.push({ k: 'clr', label: 'Очистить очередь (' + upNext.length + ')' });
@@ -1924,6 +1933,14 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     showNotice('Хранилище браузера недоступно. Музыка будет работать только пока открыта страница.');
     render();
   });
+  /* small bridge for the DJ console (dj.js) */
+  window.MM = {
+    tracks: function () { return tracks; },
+    find: find,
+    isVid: isVidish,
+    pauseMain: function () { try { A.pause(); B.pause(); C.pause(); } catch (e) {} },
+    closeSheet: closeSheet
+  };
 })();
 </script>
 <script>
@@ -1934,5 +1951,8 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
   document.addEventListener('input', function (e) { if (e.target && e.target.type === 'range') paint(e.target); }, true);
   all(); setInterval(all, 250);
 })();
+</script>
+<script>
+/*DJ_JS*/
 </script>
 

@@ -1,0 +1,28 @@
+<div class="dj" id="dj" hidden role="dialog" aria-label="DJ-пульт">
+  <div class="dj-top">
+    <h2>DJ-пульт</h2>
+    <label class="dj-master"><span>ОБЩАЯ</span><input id="djMaster" type="range" min="0" max="100" step="1" value="90" aria-label="Общая громкость"></label>
+    <button class="ghost" id="djClose" type="button">Закрыть</button>
+  </div>
+  <div class="dj-decks" id="djDecks"></div>
+  <div class="dj-mix">
+    <div class="xf">
+      <b class="a">A</b>
+      <input id="djXf" type="range" min="0" max="100" step="1" value="50" aria-label="Кроссфейдер">
+      <b class="b">B</b>
+    </div>
+    <div class="mix-row">
+      <div class="chips" id="djCurve"></div>
+      <div class="chips" id="djFadeSec"></div>
+      <button class="ghost" id="djFade" type="button" style="margin-left:auto">A → B</button>
+    </div>
+  </div>
+</div>
+<div class="dj-pick" id="djPick" hidden>
+  <div class="dj-pick-in" role="dialog" aria-label="Выбор трека">
+    <div class="dj-pick-head"><strong id="djPickTitle">Трек на деку A</strong><button class="ghost" id="djPickClose" type="button">Закрыть</button></div>
+    <input class="search" id="djPickQ" type="text" placeholder="Найти трек" autocomplete="off" style="flex:none">
+    <div class="dj-pick-list" id="djPickList"></div>
+  </div>
+</div>
+<div class="dj-toast" id="djToast" hidden></div>
