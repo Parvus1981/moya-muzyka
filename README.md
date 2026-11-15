@@ -7,3 +7,4 @@
 - `src/dj.html`, `src/dj.css`, `src/dj.js` — DJ-пульт (две деки, EQ, фильтр, кроссфейдер, BPM, SYNC, петли); `build.py` вставляет их в `public/index.html`
 
 Сборка: `cd src && python3 build.py <номер версии>`
+- `src/listen.*` — «Что за песня?» (запись с микрофона, распознавание через AudD, ссылки на сервисы); `netlify/functions/recognize.js` — запасной путь, если браузер блокирует прямой запрос к AudD
