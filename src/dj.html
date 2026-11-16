@@ -1,7 +1,8 @@
 <div class="dj" id="dj" hidden role="dialog" aria-label="DJ-пульт">
   <div class="dj-top">
-    <h2>DJ-пульт</h2>
-    <label class="dj-master"><span>ОБЩАЯ</span><input id="djMaster" type="range" min="0" max="100" step="1" value="90" aria-label="Общая громкость"></label>
+    <h2>DJ</h2>
+    <label class="dj-master"><span>ГРОМК.</span><input id="djMaster" type="range" min="0" max="100" step="1" value="90" aria-label="Общая громкость"></label>
+    <button class="ghost" id="djRecBtn" type="button">● REC</button>
     <button class="ghost" id="djClose" type="button">Закрыть</button>
   </div>
   <div class="dj-decks" id="djDecks"></div>
@@ -12,9 +13,9 @@
       <b class="b">B</b>
     </div>
     <div class="mix-row">
-      <div class="chips" id="djCurve"></div>
+      <button class="ghost" id="djFade" type="button">A → B</button>
       <div class="chips" id="djFadeSec"></div>
-      <button class="ghost" id="djFade" type="button" style="margin-left:auto">A → B</button>
+      <div class="chips" id="djCurve"></div>
     </div>
   </div>
 </div>
@@ -23,6 +24,18 @@
     <div class="dj-pick-head"><strong id="djPickTitle">Трек на деку A</strong><button class="ghost" id="djPickClose" type="button">Закрыть</button></div>
     <input class="search" id="djPickQ" type="text" placeholder="Найти трек" autocomplete="off" style="flex:none">
     <div class="dj-pick-list" id="djPickList"></div>
+  </div>
+</div>
+<div class="dj-pick" id="djRecPanel" hidden>
+  <div class="dj-pick-in" role="dialog" aria-label="Запись микса">
+    <div class="dj-pick-head"><strong>Микс записан</strong><button class="ghost" id="djRecClose" type="button">Закрыть</button></div>
+    <div class="hint2" id="djRecInfo"></div>
+    <audio id="djRecAudio" controls preload="metadata" style="width:100%"></audio>
+    <div class="chips">
+      <button class="chip on" id="djRecSave" type="button">Сохранить в библиотеку</button>
+      <button class="chip" id="djRecDl" type="button">Скачать файл</button>
+      <button class="chip" id="djRecDrop" type="button">Выбросить</button>
+    </div>
   </div>
 </div>
 <div class="dj-toast" id="djToast" hidden></div>

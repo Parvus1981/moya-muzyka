@@ -85,3 +85,28 @@ body.dj-open { overflow: hidden; }
 .dj-mix .chip { padding: 8px 10px; }
 .dj-mix .mix-row { gap: 6px; flex-wrap: nowrap; }
 .dj-mix .mix-row .chips { gap: 6px; }
+.dj-top .ghost { padding: 9px 12px; }
+.dj-master span { display: none; }
+@media (min-width: 560px) { .dj-master span { display: inline; } }
+#djRecBtn { color: #ff6b5a; }
+#djRecBtn.rec { background: #ff6b5a; color: #1a0604; border-color: transparent; font-weight: 700; animation: djrec 1.2s ease-in-out infinite; }
+@keyframes djrec { 50% { opacity: 0.65; } }
+.dj .more { width: 100%; text-align: left; background: transparent; border: 1px dashed var(--metal-edge); border-radius: 10px; padding: 8px 12px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
+.dj .more i { font-style: normal; float: right; transition: transform .15s; }
+.dj .more.open i { transform: rotate(180deg); }
+.dk-more { display: grid; gap: 10px; }
+.dk-more[hidden] { display: none !important; }
+@media (min-width: 820px) { .dj .more { display: none; } .dk-more[hidden] { display: grid !important; } }
+@media (max-width: 819px) {
+  .dj-decks { gap: 10px; padding-bottom: 8px; }
+  .deck { padding: 10px; gap: 8px; border-radius: 16px; }
+  .dk-id { width: 32px; height: 32px; font-size: 17px; border-radius: 9px; }
+  .dk-title { font-size: 14px; }
+  .dk-read { gap: 6px; }
+  .rd { padding: 3px 8px; }
+  .rd b { font-size: 16px; }
+  .dk-wave { height: 56px; }
+  .dk-over { height: 22px; }
+  .dj .key { min-height: 42px; padding: 8px 2px; }
+  .dk-row > label { width: 44px; }
+}

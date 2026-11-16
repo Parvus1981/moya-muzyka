@@ -390,6 +390,31 @@ body.dj-open { overflow: hidden; }
 .dj-mix .chip { padding: 8px 10px; }
 .dj-mix .mix-row { gap: 6px; flex-wrap: nowrap; }
 .dj-mix .mix-row .chips { gap: 6px; }
+.dj-top .ghost { padding: 9px 12px; }
+.dj-master span { display: none; }
+@media (min-width: 560px) { .dj-master span { display: inline; } }
+#djRecBtn { color: #ff6b5a; }
+#djRecBtn.rec { background: #ff6b5a; color: #1a0604; border-color: transparent; font-weight: 700; animation: djrec 1.2s ease-in-out infinite; }
+@keyframes djrec { 50% { opacity: 0.65; } }
+.dj .more { width: 100%; text-align: left; background: transparent; border: 1px dashed var(--metal-edge); border-radius: 10px; padding: 8px 12px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; color: var(--muted); }
+.dj .more i { font-style: normal; float: right; transition: transform .15s; }
+.dj .more.open i { transform: rotate(180deg); }
+.dk-more { display: grid; gap: 10px; }
+.dk-more[hidden] { display: none !important; }
+@media (min-width: 820px) { .dj .more { display: none; } .dk-more[hidden] { display: grid !important; } }
+@media (max-width: 819px) {
+  .dj-decks { gap: 10px; padding-bottom: 8px; }
+  .deck { padding: 10px; gap: 8px; border-radius: 16px; }
+  .dk-id { width: 32px; height: 32px; font-size: 17px; border-radius: 9px; }
+  .dk-title { font-size: 14px; }
+  .dk-read { gap: 6px; }
+  .rd { padding: 3px 8px; }
+  .rd b { font-size: 16px; }
+  .dk-wave { height: 56px; }
+  .dk-over { height: 22px; }
+  .dj .key { min-height: 42px; padding: 8px 2px; }
+  .dk-row > label { width: 44px; }
+}
 
 /* ---- «Что за песня?» ---- */
 .ls { position: fixed; inset: 0; z-index: 11; background: rgba(0, 0, 0, 0.72); display: flex; align-items: flex-end; justify-content: center; }
@@ -636,8 +661,9 @@ body.ls-open { overflow: hidden; }
 
 <div class="dj" id="dj" hidden role="dialog" aria-label="DJ-пульт">
   <div class="dj-top">
-    <h2>DJ-пульт</h2>
-    <label class="dj-master"><span>ОБЩАЯ</span><input id="djMaster" type="range" min="0" max="100" step="1" value="90" aria-label="Общая громкость"></label>
+    <h2>DJ</h2>
+    <label class="dj-master"><span>ГРОМК.</span><input id="djMaster" type="range" min="0" max="100" step="1" value="90" aria-label="Общая громкость"></label>
+    <button class="ghost" id="djRecBtn" type="button">● REC</button>
     <button class="ghost" id="djClose" type="button">Закрыть</button>
   </div>
   <div class="dj-decks" id="djDecks"></div>
@@ -648,9 +674,9 @@ body.ls-open { overflow: hidden; }
       <b class="b">B</b>
     </div>
     <div class="mix-row">
-      <div class="chips" id="djCurve"></div>
+      <button class="ghost" id="djFade" type="button">A → B</button>
       <div class="chips" id="djFadeSec"></div>
-      <button class="ghost" id="djFade" type="button" style="margin-left:auto">A → B</button>
+      <div class="chips" id="djCurve"></div>
     </div>
   </div>
 </div>
@@ -659,6 +685,18 @@ body.ls-open { overflow: hidden; }
     <div class="dj-pick-head"><strong id="djPickTitle">Трек на деку A</strong><button class="ghost" id="djPickClose" type="button">Закрыть</button></div>
     <input class="search" id="djPickQ" type="text" placeholder="Найти трек" autocomplete="off" style="flex:none">
     <div class="dj-pick-list" id="djPickList"></div>
+  </div>
+</div>
+<div class="dj-pick" id="djRecPanel" hidden>
+  <div class="dj-pick-in" role="dialog" aria-label="Запись микса">
+    <div class="dj-pick-head"><strong>Микс записан</strong><button class="ghost" id="djRecClose" type="button">Закрыть</button></div>
+    <div class="hint2" id="djRecInfo"></div>
+    <audio id="djRecAudio" controls preload="metadata" style="width:100%"></audio>
+    <div class="chips">
+      <button class="chip on" id="djRecSave" type="button">Сохранить в библиотеку</button>
+      <button class="chip" id="djRecDl" type="button">Скачать файл</button>
+      <button class="chip" id="djRecDrop" type="button">Выбросить</button>
+    </div>
   </div>
 </div>
 <div class="dj-toast" id="djToast" hidden></div>
@@ -2074,7 +2112,7 @@ body.ls-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '3.c16494';
+  var APP_VERSION = '4.f34521';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -2171,7 +2209,9 @@ body.ls-open { overflow: hidden; }
     find: find,
     isVid: isVidish,
     pauseMain: function () { try { A.pause(); B.pause(); C.pause(); } catch (e) {} },
-    closeSheet: closeSheet
+    closeSheet: closeSheet,
+    addFiles: addFiles,
+    toast: toast
   };
 })();
 </script>
@@ -2195,6 +2235,7 @@ body.ls-open { overflow: hidden; }
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var GRID_KEY = 'mm.dj.grid';
   var COLORS = { a: '#ffb224', b: '#5ad1ff' };
+  function themeColor() { try { var v = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(); if (v) COLORS.a = v; } catch (e) {} }
   var grid = {};
   try { grid = JSON.parse(localStorage.getItem(GRID_KEY) || '{}') || {}; } catch (e) { grid = {}; }
   function saveGrid() { try { localStorage.setItem(GRID_KEY, JSON.stringify(grid)); } catch (e) {} }
@@ -2243,11 +2284,13 @@ body.ls-open { overflow: hidden; }
       '<button class="key" data-a="bendP" type="button" aria-label="Подгнать">▶▶</button>' +
       '<button class="key" data-a="sync" type="button">SYNC</button></div>' +
       '<div class="dk-row"><label>Темп</label><div class="dk-tempo"><input type="range" class="bi" data-r="tempo" min="-8" max="8" step="0.1" value="0" aria-label="Темп деки ' + K + '"></div></div>' +
+      '<button class="more" data-a="more" type="button" aria-expanded="false">EQ · петли · сетка <i>▾</i></button>' +
+      '<div class="dk-more" data-r="more" hidden>' +
       '<div class="dk-row"><label>Опции</label><div class="chips" data-r="opts"></div></div>' +
       '<div class="dk-row"><label>Петля</label><div class="chips" data-r="loops"></div></div>' +
       '<div class="dk-row"><label>Сетка</label><div class="chips" data-r="gridc"></div></div>' +
       '<div class="dk-eq">' + eq +
-      '<div class="eqs"><span>УР.</span><div class="dk-meter" data-r="meter"></div></div></div>';
+      '<div class="eqs"><span>УР.</span><div class="dk-meter" data-r="meter"></div></div></div></div>';
   }
 
   function makeDeck(k) {
@@ -2259,7 +2302,7 @@ body.ls-open { overflow: hidden; }
     var d = {
       k: k, sec: sec, el: el, url: null, id: null, tok: 0,
       peaks: null, dur: 0, bpm: 0, off: 0, cue: 0, loop: null, tempo: 0, range: 8, keylock: true, bend: 0,
-      filt: 0, eq: { low: 0, mid: 0, high: 0 }, vol: 1, lvl: 0, taps: [], note: '',
+      filt: 0, eq: { low: 0, mid: 0, high: 0 }, more: window.innerWidth >= 820, auto: null, vol: 1, lvl: 0, taps: [], note: '',
       overCv: null, overW: 0, last: {}
     };
     d.r = function (n) { return $('[data-r="' + n + '"]', sec); };
@@ -2410,7 +2453,7 @@ body.ls-open { overflow: hidden; }
     if (d.url) URL.revokeObjectURL(d.url);
     d.url = URL.createObjectURL(t.blob); d.el.src = d.url; d.el.load();
     d.id = id; d.title = t.title; d.artist = t.artist || 'Без исполнителя';
-    d.cue = 0; d.loop = null; d.peaks = null; d.bpm = 0; d.off = 0; d.overCv = null; d.dur = t.duration || 0; d.taps = [];
+    d.cue = 0; d.loop = null; d.peaks = null; d.auto = null; d.bpm = 0; d.off = 0; d.overCv = null; d.dur = t.duration || 0; d.taps = [];
     d.bend = 0; setTempo(d, 0);
     var tok = ++d.tok;
     paintDeck(d);
@@ -2424,7 +2467,7 @@ body.ls-open { overflow: hidden; }
     decode(t.blob).then(function (buf) {
       if (d.tok !== tok) return;
       var r = analyze(buf);
-      d.peaks = r.peaks; d.dur = r.dur || d.dur; d.overCv = null;
+      d.peaks = r.peaks; d.dur = r.dur || d.dur; d.overCv = null; d.auto = r.bpm ? { bpm: r.bpm, off: r.off } : null;
       if (g) { d.bpm = g.bpm; d.off = g.off; d.note = ''; }
       else if (r.bpm) { d.bpm = r.bpm; d.off = r.off; grid[id] = { bpm: d.bpm, off: d.off }; saveGrid(); d.note = ''; }
       else d.note = 'Темп не определён. Нажми TAP в такт.';
@@ -2503,8 +2546,16 @@ body.ls-open { overflow: hidden; }
   }
   function gridAct(d, a) {
     if (!d.id) return;
-    if (a === 'half' && d.bpm) d.bpm = Math.round(d.bpm / 2 * 100) / 100;
-    else if (a === 'dbl' && d.bpm) d.bpm = Math.round(d.bpm * 2 * 100) / 100;
+    if ((a === 'half' || a === 'dbl') && !d.bpm) { toast('Сначала задай BPM (TAP)'); return; }
+    if (a === 'half' || a === 'dbl') {
+      var nb = a === 'half' ? d.bpm / 2 : d.bpm * 2;
+      if (nb < 50 || nb > 200) { toast('Такой темп не бывает: ' + nb.toFixed(0) + ' BPM'); return; }
+      d.bpm = Math.round(nb * 100) / 100;
+    }
+    else if (a === 'auto') {
+      if (!d.auto) { toast('Автоопределение не нашло темп'); return; }
+      d.bpm = d.auto.bpm; d.off = d.auto.off; toast('Вернул BPM, найденный автоматически');
+    }
     else if (a === 'tap') { tap(d); return; }
     else if (a === 'first') { d.off = d.el.currentTime; if (!d.bpm) { toast('Сначала задай BPM (TAP)'); return; } toast('1-я доля здесь'); }
     d.loop = null; remember(d); paintDeck(d);
@@ -2526,7 +2577,12 @@ body.ls-open { overflow: hidden; }
     b.classList.toggle('on', !!playing);
     b.setAttribute('aria-label', playing ? 'Пауза' : 'Играть');
   }
+  function paintMore(d) {
+    d.r('more').hidden = !d.more;
+    var b = $('[data-a="more"]', d.sec); b.setAttribute('aria-expanded', String(d.more)); b.classList.toggle('open', d.more);
+  }
   function paintDeck(d) {
+    paintMore(d);
     d.r('title').textContent = d.id ? d.title : 'Дека пуста';
     d.r('artist').textContent = d.id ? d.artist : 'Выбери трек';
     d.r('note').textContent = d.note || '';
@@ -2538,7 +2594,7 @@ body.ls-open { overflow: hidden; }
     ]);
     chipSet(d.r('loops'), [1, 2, 4, 8].map(function (n) { return { a: 'loop', v: n, label: String(n), on: !!(d.loop && d.loop.beats === n) }; })
       .concat([{ a: 'loopoff', label: 'Выкл' }]));
-    chipSet(d.r('gridc'), [{ a: 'half', label: '÷2' }, { a: 'dbl', label: '×2' }, { a: 'tap', label: 'TAP' }, { a: 'first', label: '1-я доля' }]);
+    chipSet(d.r('gridc'), [{ a: 'half', label: '÷2' }, { a: 'dbl', label: '×2' }, { a: 'tap', label: 'TAP' }, { a: 'first', label: '1-я доля' }, { a: 'auto', label: 'Авто' }]);
     paintTransport(d);
     d.last = {};
   }
@@ -2652,13 +2708,14 @@ body.ls-open { overflow: hidden; }
       else if (a === 'play') togglePlay(d);
       else if (a === 'cue') cue(d);
       else if (a === 'sync') syncDeck(d);
+      else if (a === 'more') { d.more = !d.more; paintMore(d); }
       else if (a === 'keylock') { d.keylock = !d.keylock; applyRate(d); paintDeck(d); }
       else if (a === 'range') { d.range = d.range === 8 ? 16 : d.range === 16 ? 50 : 8; var tr = d.r('tempo'); tr.min = -d.range; tr.max = d.range; setTempo(d, d.tempo); paintDeck(d); }
       else if (a === 'tempo0') { setTempo(d, 0); }
       else if (a === 'eqreset') { d.eq.low = d.eq.mid = d.eq.high = 0; d.filt = 0; ['low', 'mid', 'high', 'filt'].forEach(function (n) { d.r(n).value = 0; }); applyEq(d); applyFilter(d); }
       else if (a === 'loop') loopSet(d, +b.getAttribute('data-v'));
       else if (a === 'loopoff') { d.loop = null; paintDeck(d); }
-      else if (a === 'half' || a === 'dbl' || a === 'tap' || a === 'first') gridAct(d, a);
+      else if (a === 'half' || a === 'dbl' || a === 'tap' || a === 'first' || a === 'auto') gridAct(d, a);
     });
     /* hold-to-nudge keys */
     ['bendM', 'bendP'].forEach(function (a) {
@@ -2712,12 +2769,12 @@ body.ls-open { overflow: hidden; }
       function () { curve = curve === 'smooth' ? 'cut' : 'smooth'; applyXf(); paintMix(); });
     chips($('#djFadeSec'), [4, 8, 16].map(function (s) { return { s: s, label: s + ' с', on: fadeSec === s }; }),
       function (it) { fadeSec = it.s; paintMix(); });
-    $('#djFade').textContent = fadeTimer ? 'Стоп' : (xfPos < 0.5 ? 'A → B' : 'B → A');
+    $('#djFade').textContent = fadeTimer ? 'Стоп' : (xfPos <= 0.5 ? 'A → B' : 'B → A');
   }
   function stopFade() { if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = 0; } }
   function startFade() {
     if (fadeTimer) { stopFade(); paintMix(); return; }
-    var toB = xfPos < 0.5, inD = D[toB ? 'b' : 'a'], outD = D[toB ? 'a' : 'b'];
+    var toB = xfPos <= 0.5, inD = D[toB ? 'b' : 'a'], outD = D[toB ? 'a' : 'b'];
     if (!inD.id) { toast('Сначала загрузи трек на деку ' + inD.k.toUpperCase()); return; }
     ensureCtx();
     if (inD.el.paused) {
@@ -2764,6 +2821,84 @@ body.ls-open { overflow: hidden; }
   $('#djPickClose').addEventListener('click', closePick);
   $('#djPick').addEventListener('click', function (e) { if (e.target === $('#djPick')) closePick(); });
 
+
+  /* ---------- mix recording: what you hear -> WAV (stereo, 16-bit) ---------- */
+  var rec = null, recFile = null, recUrl = null;
+  function wavHeader(frames, sr) {
+    var buf = new ArrayBuffer(44), v = new DataView(buf), n = frames * 4;
+    function str(o, s) { for (var k = 0; k < s.length; k++) v.setUint8(o + k, s.charCodeAt(k)); }
+    str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, n, true);
+    return buf;
+  }
+  function stamp() {
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + '.' + p(d.getMinutes());
+  }
+  function recStart() {
+    if (!ensureCtx()) { toast('Здесь не работает Web Audio'); return; }
+    var node = ctx.createScriptProcessor(16384, 2, 2), mute = ctx.createGain(); mute.gain.value = 0;
+    var r = { node: node, mute: mute, chunks: [], frames: 0, sr: ctx.sampleRate, t0: Date.now(), timer: 0 };
+    node.onaudioprocess = function (e) {
+      var l = e.inputBuffer.getChannelData(0), rr = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : l;
+      var out = new Int16Array(l.length * 2);
+      for (var i = 0; i < l.length; i++) {
+        var a = Math.max(-1, Math.min(1, l[i])), b = Math.max(-1, Math.min(1, rr[i]));
+        out[i * 2] = a < 0 ? a * 0x8000 : a * 0x7fff; out[i * 2 + 1] = b < 0 ? b * 0x8000 : b * 0x7fff;
+      }
+      r.chunks.push(out); r.frames += l.length;
+    };
+    limiter.connect(node); node.connect(mute); mute.connect(ctx.destination);
+    rec = r;
+    var btn = $('#djRecBtn'); btn.classList.add('rec');
+    r.timer = setInterval(function () {
+      var s = (Date.now() - r.t0) / 1000;
+      btn.textContent = '■ ' + fmt(s);
+      if (s > 900) { toast('Запись остановлена: лимит 15 минут'); recStop(); }
+    }, 300);
+    btn.textContent = '■ 0:00';
+  }
+  function recStop(silent) {
+    if (!rec) return null;
+    var r = rec; rec = null;
+    clearInterval(r.timer);
+    try { limiter.disconnect(r.node); r.node.disconnect(); r.mute.disconnect(); } catch (e) {}
+    r.node.onaudioprocess = null;
+    var btn = $('#djRecBtn'); btn.classList.remove('rec'); btn.textContent = '● REC';
+    if (r.frames < r.sr) { if (!silent) toast('Слишком коротко, запись выброшена'); return null; }
+    var file = new File([wavHeader(r.frames, r.sr)].concat(r.chunks), 'Микс ' + stamp() + '.wav', { type: 'audio/wav' });
+    return { file: file, sec: r.frames / r.sr };
+  }
+  function recPanel(res) {
+    recFile = res.file;
+    if (recUrl) URL.revokeObjectURL(recUrl);
+    recUrl = URL.createObjectURL(recFile);
+    $('#djRecAudio').src = recUrl;
+    $('#djRecInfo').textContent = recFile.name + ' · ' + fmt(res.sec) + ' · ' + Math.max(1, Math.round(recFile.size / 1e6)) + ' МБ (без сжатия)';
+    $('#djRecPanel').hidden = false;
+  }
+  function recClosePanel(drop) {
+    var au = $('#djRecAudio'); try { au.pause(); } catch (e) {}
+    $('#djRecPanel').hidden = true;
+    if (drop && recUrl) { au.removeAttribute('src'); au.load(); URL.revokeObjectURL(recUrl); recUrl = null; recFile = null; }
+  }
+  $('#djRecBtn').addEventListener('click', function () {
+    if (!rec) { recStart(); toast('Запись пошла: играй, мешай и жми ■'); return; }
+    var res = recStop(); if (res) recPanel(res);
+  });
+  $('#djRecClose').addEventListener('click', function () { recClosePanel(false); });
+  $('#djRecDrop').addEventListener('click', function () { recClosePanel(true); });
+  $('#djRecSave').addEventListener('click', function () {
+    if (!recFile) return;
+    MM.addFiles([recFile]); toast('Микс добавлен в библиотеку'); recClosePanel(true);
+  });
+  $('#djRecDl').addEventListener('click', function () {
+    if (!recFile) return;
+    var a = document.createElement('a'); a.href = recUrl; a.download = recFile.name; document.body.appendChild(a); a.click(); a.remove();
+  });
+
   /* ---------- open / close ---------- */
   function wake() {
     try {
@@ -2775,7 +2910,7 @@ body.ls-open { overflow: hidden; }
   function openDj() {
     if (openNow) return;
     if (!ensureCtx()) { toast('Здесь не работает Web Audio'); return; }
-    MM.pauseMain(); MM.closeSheet();
+    MM.pauseMain(); MM.closeSheet(); themeColor();
     root.hidden = false; document.body.classList.add('dj-open'); openNow = true;
     try { history.pushState({ dj: 1 }, ''); } catch (e) {}
     paintMix(); paintDeck(D.a); paintDeck(D.b);
@@ -2787,6 +2922,8 @@ body.ls-open { overflow: hidden; }
   function closeDj(fromPop) {
     if (!openNow) return;
     stopFade(); closePick();
+    if (rec) { var rr = recStop(true); if (rr) { MM.addFiles([rr.file]); MM.toast('Микс сохранён в библиотеку'); } }
+    recClosePanel(false);
     ['a', 'b'].forEach(function (k) { try { D[k].el.pause(); } catch (e) {} });
     openNow = false; cancelAnimationFrame(raf); clearInterval(loopTimer);
     root.hidden = true; document.body.classList.remove('dj-open');
