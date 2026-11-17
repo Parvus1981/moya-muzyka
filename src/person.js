@@ -54,5 +54,28 @@
       });
     });
   }
-  window.Person = { cut: cut };
+
+  /* кадр видео: вырезка того же размера, мягкая маска, сглаживание во времени против мерцания */
+  function frame(src, prev) {
+    return init().then(function (s) {
+      var w = src.width, h = src.height;
+      return new Promise(function (ok, bad) {
+        var to = setTimeout(function () { pending = null; bad(new Error('timeout')); }, 20000);
+        pending = function (r) {
+          clearTimeout(to);
+          try {
+            var mc = document.createElement('canvas'); mc.width = w; mc.height = h; var mg = mc.getContext('2d', { willReadFrequently: true });
+            mg.drawImage(r.segmentationMask, 0, 0, w, h);
+            var md = mg.getImageData(0, 0, w, h).data, out = document.createElement('canvas'); out.width = w; out.height = h;
+            var og = out.getContext('2d', { willReadFrequently: true }); og.drawImage(src, 0, 0);
+            var id = og.getImageData(0, 0, w, h), d = id.data, N = w * h, al = new Float32Array(N), i;
+            for (i = 0; i < N; i++) { var a = smooth(0.4, 0.62, md[i * 4] / 255); if (prev) a = 0.55 * a + 0.45 * prev[i]; al[i] = a; d[i * 4 + 3] = Math.round(a * 255); }
+            og.putImageData(id, 0, 0); ok({ cv: out, alpha: al });
+          } catch (e) { bad(e); }
+        };
+        s.send({ image: src }).catch(function (e) { clearTimeout(to); pending = null; bad(e); });
+      });
+    });
+  }
+  window.Person = { cut: cut, frame: frame, ready: init };
 })();

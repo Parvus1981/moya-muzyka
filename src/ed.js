@@ -348,12 +348,13 @@
       g.save();
       g.translate(bx.cx + offX, bx.cy + offY + bx.h / 2 - hop); g.rotate(rot); g.scale((c.flip ? -1 : 1) * pop, sq * pop);
       if (c.shadow !== false) { g.save(); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
-      var sh = c.img.height / N;
+      var im = c.frames ? c.frames[Math.floor(Math.max(0, t - c.t0) * c.fps) % c.frames.length] : c.img; if (!im || !im.width) im = c.img;
+      var sh = im.height / N;
       for (var i = 0; i < N; i++) {
         var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
         if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
         var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
-        g.drawImage(c.img, 0, i * sh, c.img.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
+        g.drawImage(im, 0, i * sh, im.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
       }
       var m = c.mouth;
       if (m && m.on) {
@@ -508,12 +509,12 @@
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: camFace }, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false }).then(function (st) {
       if ($('#edCam').hidden) { st.getTracks().forEach(function (tr) { tr.stop(); }); return; }
       camStream = st; var v = $('#edCamV'); v.srcObject = st; v.play().catch(function () {});
-      info.textContent = camMode === 'scan' ? 'Положи рисунок на ровную поверхность при хорошем свете, чтобы лист был виден целиком.' : 'Снимок добавится в ролик как фото.';
+      info.textContent = camMode === 'vid' ? 'Встань так, чтобы тебя было видно целиком, и подвигайся: потанцуй, помаши рукой. Запись 5 секунд.' : camMode === 'scan' ? 'Положи рисунок на ровную поверхность при хорошем свете, чтобы лист был виден целиком.' : 'Снимок добавится в ролик как фото.';
     }, function (e) {
       info.textContent = (e && e.name === 'NotAllowedError') ? 'Нет доступа к камере. Разреши камеру для приложения в настройках телефона (Приложения → Моя музыка → Разрешения) и нажми «Другая камера».' : 'Не удалось включить камеру (' + (e && e.name || 'ошибка') + '). Можно снять в обычной камере и выбрать «Из галереи».';
     });
   }
-  function openCam(mode) { camMode = mode; $('#edCam').hidden = false; startCam(); }
+  function openCam(mode) { camMode = mode; $('#edCam').hidden = false; $('#edCamShot').hidden = mode === 'vid'; $('#edCamRec').hidden = mode !== 'vid'; startCam(); }
   function closeCam() { stopCam(); $('#edCam').hidden = true; }
   $('#edCamClose').addEventListener('click', closeCam);
   $('#edCamFlip').addEventListener('click', function () { camFace = camFace === 'environment' ? 'user' : 'environment'; startCam(); });
@@ -588,8 +589,59 @@
   }
   $('#edBrushDone').addEventListener('click', closeBrush);
 
+  /* ---------- герой из видео: вырезка кадр за кадром ---------- */
+  var proc = { cancel: false };
+  function pbar(i, n, txt) { $('#edProcBar').style.width = (n ? i / n * 100 : 0).toFixed(1) + '%'; $('#edProcInfo').textContent = txt || ('Кадр ' + i + ' из ' + n); }
+  function seekTo(v, tm) { return new Promise(function (ok) { var done = false; function fin() { if (!done) { done = true; v.removeEventListener('seeked', fin); ok(); } } v.addEventListener('seeked', fin); v.currentTime = tm; setTimeout(fin, 3000); }); }
+  function makeVideoHero(n, getRaw) {
+    proc.cancel = false; $('#edProc').hidden = false; pbar(0, n, 'Загружаю вырезку (первый раз ~6 МБ, нужен интернет)…');
+    var frames = [], prev = null, i = 0;
+    return window.Person.ready().then(function step() {
+      if (proc.cancel) throw new Error('cancel');
+      if (i >= n) return;
+      return getRaw(i).then(function (raw) { return window.Person.frame(raw, prev); }).then(function (r) { prev = r.alpha; frames.push(r.cv); i++; pbar(i, n); return step(); });
+    }).then(function () {
+      /* общая рамка по всем кадрам, чтобы герой не дёргался */
+      var w = frames[0].width, h = frames[0].height, x0 = w, y0 = h, x1 = 0, y1 = 0, colC = new Int32Array(w), rowC = new Int32Array(h);
+      frames.forEach(function (f) { var d = f.getContext('2d').getImageData(0, 0, w, h).data, x, y; for (y = 0; y < h; y += 2) for (x = 0; x < w; x += 2) if (d[(y * w + x) * 4 + 3] > 140) { colC[x]++; rowC[y]++; } });
+      var cm = Math.max.apply(null, colC), rm2 = Math.max.apply(null, rowC), ct = Math.max(3, cm * 0.04), rt = Math.max(3, rm2 * 0.04), k2;
+      for (k2 = 0; k2 < w; k2++) if (colC[k2] >= ct) { if (k2 < x0) x0 = k2; if (k2 > x1) x1 = k2; }
+      for (k2 = 0; k2 < h; k2++) if (rowC[k2] >= rt) { if (k2 < y0) y0 = k2; if (k2 > y1) y1 = k2; }
+      if (x1 <= x0 || y1 <= y0) throw new Error('nobody');
+      x0 = Math.max(0, x0 - 6); y0 = Math.max(0, y0 - 6); x1 = Math.min(w - 1, x1 + 6); y1 = Math.min(h - 1, y1 + 6);
+      var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+      var out = frames.map(function (f) { var cc = document.createElement('canvas'); cc.width = cw; cc.height = ch; cc.getContext('2d').drawImage(f, x0, y0, cw, ch, 0, 0, cw, ch); return cc; });
+      var c = mkChar(out[0], 'chv' + Date.now().toString(36) + (uid++));
+      c.frames = out; c.fps = 12; c.img = out[0]; c.anim = 'none'; c.size = 0.5; c.x = 0.5; c.y = 0.95 - c.size / 2 - 0.03; c.fb = [];
+      chars.push(c); selC = chars.length - 1; tab = 'chars';
+      out.reduce(function (pr, cc, k) { return pr.then(function () { return new Promise(function (ok) { cc.toBlob(function (bl) { c.fb[k] = bl; ok(); }, 'image/png'); }); }); }, Promise.resolve()).then(function () { saveProject(true); });
+      $('#edProc').hidden = true; paintTabs(); paintPane(); if (!playing) draw(); toast('Герой готов. Двигай и увеличивай его, он двигается как в видео');
+    }).catch(function (e) {
+      $('#edProc').hidden = true;
+      toast(e && e.message === 'cancel' ? 'Отменено' : e && e.message === 'nobody' ? 'Человека в видео не нашёл' : 'Не получилось вырезать (нужен интернет для первой загрузки модели)');
+    });
+  }
+  function rawFromVideoFile(f) {
+    var url = URL.createObjectURL(f), v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    return new Promise(function (ok, bad) { v.onloadedmetadata = ok; v.onerror = function () { bad(); }; }).then(function () {
+      var dur = Math.min(isFinite(v.duration) ? v.duration : 5, 6), n = Math.max(2, Math.floor(dur * 12)), sc = Math.min(1, 480 / v.videoHeight), w = Math.round(v.videoWidth * sc), h = Math.round(v.videoHeight * sc);
+      var cv = document.createElement('canvas'); cv.width = w; cv.height = h; var g2 = cv.getContext('2d');
+      return makeVideoHero(n, function (i) { return seekTo(v, i / 12).then(function () { var c2 = document.createElement('canvas'); c2.width = w; c2.height = h; c2.getContext('2d').drawImage(v, 0, 0, w, h); return c2; }); }).then(function () { URL.revokeObjectURL(url); });
+    }, function () { toast('Не получилось открыть видео'); });
+  }
+  $('#edVidFile').addEventListener('change', function () { var f = this.files && this.files[0]; this.value = ''; if (f) rawFromVideoFile(f); });
+  $('#edProcCancel').addEventListener('click', function () { proc.cancel = true; });
+  var recT = null;
+  $('#edCamRec').addEventListener('click', function () {
+    var v = $('#edCamV'); if (!camStream || !v.videoWidth) { toast('Камера ещё не готова'); return; }
+    var sc = Math.min(1, 480 / v.videoHeight), w = Math.round(v.videoWidth * sc), h = Math.round(v.videoHeight * sc), raws = [], btn = this, left = 5;
+    btn.disabled = true; btn.textContent = '● Идёт запись…';
+    var iv = setInterval(function () { var c2 = document.createElement('canvas'); c2.width = w; c2.height = h; c2.getContext('2d').drawImage(v, 0, 0, w, h); raws.push(c2); if (raws.length % 12 === 0) { left--; btn.textContent = '● Идёт запись… ' + left; } if (raws.length >= 60) { clearInterval(iv); btn.disabled = false; btn.textContent = '● Записать 5 с'; closeCam(); makeVideoHero(raws.length, function (i) { return Promise.resolve(raws[i]); }); } }, 1000 / 12);
+  });
+
   function paneChars(p) {
     p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openCam('scan'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
+    p.appendChild(chipRow([{ label: '🎬 Герой из видео: записать', on: true, fn: function () { openCam('vid'); } }, { label: '📁 из файла', fn: function () { $('#edVidFile').click(); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
     var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
     var tl = el('div', 'ed-tl'); tl.style.padding = '2px 0';
@@ -624,7 +676,7 @@
     p.appendChild(say);
     p.appendChild(chipRow([
       { label: 'Отразить', fn: function () { c.flip = !c.flip; saveProject(); if (!playing) draw(); } },
-      { label: '✂ Подчистить', fn: function () { openBrush(c); } },
+      c.frames ? { label: 'Видео-герой', on: true, fn: function () {} } : { label: '✂ Подчистить', fn: function () { openBrush(c); } },
       { label: 'Удалить героя', fn: function () { chars.splice(selC, 1); selC = chars.length ? 0 : -1; saveProject(true); paintPane(); if (!playing) draw(); } }
     ]));
     p.appendChild(el('div', 'ed-hint', 'Тащи героя пальцем прямо по кадру. Рот: нажми «Поставить рот» и коснись рта на рисунке героя. Ритм берётся из музыки ролика: выбери музыку на вкладке «Музыка».'));
@@ -1015,7 +1067,7 @@
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -1029,9 +1081,9 @@
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
-      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth }; }),
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
-    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
+    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
       var have = {}; keys.forEach(function (k) { have[k] = 1; });
       return idb('blobs', 'readwrite', function (st) {
@@ -1049,7 +1101,7 @@
     idb('meta', 'readonly', function (st) { return st.get('project'); }).then(function (meta) {
       if (!meta || !meta.clips || (!meta.clips.length && !(meta.chars && meta.chars.length)) || clips.length) return;
       var ids = []; meta.clips.forEach(function (m) { if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
-      (meta.chars || []).forEach(function (m) { if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
+      (meta.chars || []).forEach(function (m) { if (m.vid) { for (var q = 0; q < m.vid; q++) ids.push(m.bid + '_' + q); } else if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
       return Promise.all(ids.map(function (b) { return idb('blobs', 'readonly', function (st) { return st.get(b); }); })).then(function (arr) {
         if (clips.length) return;
         var blobs = {}, urls = {}; ids.forEach(function (b, i) { if (arr[i]) blobs[b] = arr[i]; });
@@ -1064,6 +1116,11 @@
         });
         chars = []; selC = -1;
         (meta.chars || []).forEach(function (m) {
+          if (m.vid) {
+            var fr = [], fbs = [], okv = true; for (var q = 0; q < m.vid; q++) { var bq = blobs[m.bid + '_' + q]; if (!bq) { okv = false; break; } var imq = new Image(); imq.src = URL.createObjectURL(bq); fr.push(imq); fbs.push(bq); }
+            if (!okv) return; var cv0 = mkChar(fr[0], m.bid, m); cv0.frames = fr; cv0.fps = m.fps || 12; cv0.fb = fbs; cv0.cv = fr[0]; chars.push(cv0);
+            fr[0].onload = function () { if (!playing && openNow) draw(); if (tab === 'chars') paintPane(); }; return;
+          }
           var b = blobs[m.bid]; if (!b) return;
           var im = new Image(), ch = mkChar(im, m.bid, m); ch.blob = b; chars.push(ch);
           im.onload = function () { ch.cv = im; if (!playing && openNow) draw(); if (tab === 'chars') paintPane(); };

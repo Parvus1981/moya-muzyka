@@ -61,7 +61,7 @@
       <div class="dj-pick-head"><strong>Камера</strong><button class="ghost" id="edCamClose" type="button">Закрыть</button></div>
       <video id="edCamV" playsinline muted autoplay style="width:100%;max-height:56vh;background:#000;border-radius:12px;object-fit:contain"></video>
       <div class="hint2" id="edCamInfo"></div>
-      <div class="chips"><button class="chip on" id="edCamShot" type="button">● Снять</button><button class="chip" id="edCamFlip" type="button">Другая камера</button></div>
+      <div class="chips"><button class="chip on" id="edCamShot" type="button">● Снять</button><button class="chip" id="edCamRec" type="button" hidden>● Записать 5 с</button><button class="chip" id="edCamFlip" type="button">Другая камера</button></div>
     </div>
   </div>
   <div class="dj-pick" id="edBrush" hidden>
@@ -73,5 +73,14 @@
       <div class="hint2">Стереть — води пальцем по лишнему фону. Вернуть — закрась обратно то, что стёрлось зря. Палочка — одно касание убирает похожий по цвету фон.</div>
     </div>
   </div>
+  <div class="dj-pick" id="edProc" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Вырезаю героя из видео">
+      <div class="dj-pick-head"><strong>Вырезаю героя из видео</strong></div>
+      <div class="hint2" id="edProcInfo"></div>
+      <div class="ls-bar"><i id="edProcBar"></i></div>
+      <div class="chips"><button class="chip" id="edProcCancel" type="button">Отмена</button></div>
+    </div>
+  </div>
+  <input type="file" id="edVidFile" accept="video/*" hidden>
   <div class="dj-toast" id="edToast" hidden></div>
 </div>
