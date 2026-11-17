@@ -492,7 +492,7 @@
         scanImg = im; $('#edScanPerson').hidden = false;
         if (!r || !r.cands.length) { info.textContent = 'Рисунок не нашёл. Если это обычное фото человека, нажми «Вырезать человека». Для рисунка снимай на светлом листе при хорошем свете.'; scanRes = { cands: [] }; return; }
         scanRes = r;
-        info.textContent = 'Нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
+        info.textContent = 'Если на фото человек (не рисунок) — нажми зелёную кнопку «Вырезать» ниже. Для рисунка на листе: нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
         r.cands.forEach(addCandBtn);
         $('#edScanAdd').hidden = false;
       }, 30);

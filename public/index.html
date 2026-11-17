@@ -763,7 +763,7 @@ body.ed-open { overflow: hidden; }
     <div class="dj-pick-in" role="dialog" aria-label="Герои из рисунка">
       <div class="dj-pick-head"><strong>Герои из рисунка</strong><button class="ghost" id="edScanClose" type="button">Закрыть</button></div>
       <div class="hint2" id="edScanInfo"></div>
-      <div class="chips"><button class="chip" id="edScanPerson" type="button" hidden>🧍 Это фото человека — вырезать</button></div>
+      <div class="chips"><button class="chip on" id="edScanPerson" type="button" hidden>🧍 Это обычное фото человека — вырезать</button></div>
       <div class="sc-list" id="edScanList"></div>
       <div class="chips"><button class="chip on" id="edScanAdd" type="button" hidden>Добавить выбранных в ролик</button></div>
     </div>
@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '13.7c1b8f';
+  var APP_VERSION = '14.199036';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3857,7 +3857,7 @@ body.ed-open { overflow: hidden; }
         scanImg = im; $('#edScanPerson').hidden = false;
         if (!r || !r.cands.length) { info.textContent = 'Рисунок не нашёл. Если это обычное фото человека, нажми «Вырезать человека». Для рисунка снимай на светлом листе при хорошем свете.'; scanRes = { cands: [] }; return; }
         scanRes = r;
-        info.textContent = 'Нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
+        info.textContent = 'Если на фото человек (не рисунок) — нажми зелёную кнопку «Вырезать» ниже. Для рисунка на листе: нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
         r.cands.forEach(addCandBtn);
         $('#edScanAdd').hidden = false;
       }, 30);
