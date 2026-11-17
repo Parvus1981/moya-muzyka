@@ -1,0 +1,49 @@
+<div class="ed" id="ed" hidden role="dialog" aria-label="Монтаж">
+  <div class="ed-top">
+    <h2>Монтаж</h2>
+    <button class="ghost" id="edExport" type="button">Экспорт</button>
+    <button class="ghost" id="edClose" type="button">Закрыть</button>
+  </div>
+  <div class="ed-stage"><div class="ed-cvw" id="edCvw"><canvas id="edCv"></canvas><div class="ed-empty" id="edEmpty">Добавь видео или фото кнопкой «+»</div></div></div>
+  <div class="ed-bar">
+    <button class="key play" id="edPlay" type="button" aria-label="Играть">▶</button>
+    <input id="edSeek" type="range" min="0" max="1000" step="1" value="0" aria-label="Перемотка">
+    <span class="ed-time" id="edTime">0:00 / 0:00</span>
+  </div>
+  <div class="ed-tl" id="edTl"></div>
+  <div class="ed-tabs chips" id="edTabs"></div>
+  <div class="ed-pane" id="edPane"></div>
+  <input type="file" id="edFile" accept="video/*,image/*" multiple hidden>
+
+  <div class="dj-pick" id="edPick" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Выбор музыки">
+      <div class="dj-pick-head"><strong>Музыка для ролика</strong><button class="ghost" id="edPickClose" type="button">Закрыть</button></div>
+      <input class="search" id="edPickQ" type="text" placeholder="Найти трек" autocomplete="off" style="flex:none">
+      <div class="dj-pick-list" id="edPickList"></div>
+    </div>
+  </div>
+
+  <div class="dj-pick" id="edBusy" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Экспорт">
+      <div class="dj-pick-head"><strong>Записываю ролик</strong></div>
+      <div class="hint2">Запись идёт в реальном времени: минута ролика пишется минуту. Не выключай экран и не сворачивай приложение.</div>
+      <div class="ls-bar"><i id="edBusyBar"></i></div>
+      <div class="ed-busy-t" id="edBusyT">0:00 / 0:00</div>
+      <div class="chips"><button class="chip" id="edBusyCancel" type="button">Отмена</button></div>
+    </div>
+  </div>
+
+  <div class="dj-pick" id="edDone" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Ролик готов">
+      <div class="dj-pick-head"><strong>Ролик готов</strong><button class="ghost" id="edDoneClose" type="button">Закрыть</button></div>
+      <video id="edDoneV" controls playsinline preload="metadata" style="width:100%;max-height:46vh;background:#000;border-radius:12px"></video>
+      <div class="hint2" id="edDoneInfo"></div>
+      <div class="chips">
+        <button class="chip on" id="edDoneSave" type="button">В библиотеку</button>
+        <button class="chip" id="edDoneDl" type="button">Скачать файл</button>
+        <button class="chip" id="edDoneDrop" type="button">Выбросить</button>
+      </div>
+    </div>
+  </div>
+  <div class="dj-toast" id="edToast" hidden></div>
+</div>

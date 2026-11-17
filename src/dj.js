@@ -715,5 +715,17 @@
 
   D.a = makeDeck('a'); D.b = makeDeck('b');
   paintDeck(D.a); paintDeck(D.b); paintMix();
-  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); } };
+  /* ритм трека для других модулей (монтаж): темп и смещение первой доли */
+  function analyzeTrack(id) {
+    var tr = MM.find(id); if (!tr) return Promise.resolve(null);
+    var gg = grid[id]; if (gg && gg.bpm) return Promise.resolve({ bpm: gg.bpm, off: gg.off || 0 });
+    if (tr.blob.size > 70e6) return Promise.resolve(null);
+    return decode(tr.blob).then(function (buf) {
+      var r = analyze(buf);
+      if (!r.bpm) return null;
+      grid[id] = { bpm: r.bpm, off: r.off }; saveGrid();
+      return { bpm: r.bpm, off: r.off };
+    }).catch(function () { return null; });
+  }
+  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack };
 })();
