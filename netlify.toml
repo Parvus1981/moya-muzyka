@@ -1,7 +1,3 @@
-# Static app: no build step, Netlify publishes the ready files from /public;
-# one small function (recognize) forwards song-recognition requests
+# Static app: no build step, Netlify publishes the ready files from /public
 [build]
   publish = "public"
-
-[functions]
-  directory = "netlify/functions"
