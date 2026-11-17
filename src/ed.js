@@ -380,10 +380,10 @@
     toast('Героев добавлено: ' + n + '. Двигай их пальцем по кадру');
   }
   var scanRes = null;
-  function openScan() {
-    $('#edScanFile').value = ''; $('#edScanFile').click();
+  function openScan(how) {
+    var i = $(how === 'cam' ? '#edScanCam' : '#edScanFile'); i.value = ''; i.click();
   }
-  $('#edScanFile').addEventListener('change', function () {
+  function onScanPick() {
     var f = this.files && this.files[0]; if (!f) return;
     var box = $('#edScanList'), info = $('#edScanInfo'); box.textContent = ''; info.textContent = 'Ищу героев на рисунке…';
     $('#edScan').hidden = false; $('#edScanAdd').hidden = true;
@@ -407,7 +407,8 @@
     };
     im.onerror = function () { info.textContent = 'Не получилось открыть фото'; };
     im.src = url;
-  });
+  }
+  $('#edScanFile').addEventListener('change', onScanPick); $('#edScanCam').addEventListener('change', onScanPick);
   $('#edScanAdd').addEventListener('click', function () {
     var pick = scanRes ? scanRes.cands.filter(function (c) { return c.sel; }) : [];
     if (!pick.length) { toast('Отметь хотя бы одного героя'); return; }
@@ -416,7 +417,7 @@
   $('#edScanClose').addEventListener('click', function () { $('#edScan').hidden = true; });
 
   function paneChars(p) {
-    p.appendChild(chipRow([{ label: '📷 Сфотографировать / выбрать рисунок', on: true, fn: openScan }]));
+    p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openScan('cam'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
     var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
     var tl = el('div', 'ed-tl'); tl.style.padding = '2px 0';
