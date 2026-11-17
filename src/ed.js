@@ -15,6 +15,7 @@
   var clips = [], titles = [], sel = -1, selT = -1, tab = 'clip', uid = 0, total = 0;
   var music = { id: null, title: '', el: null, node: null, gain: null, url: null, start: 0, vol: 0.8, fade: true, dur: 0, status: '' };
   var origVol = 1;
+  var chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
   var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
@@ -291,6 +292,149 @@
     }
     return null;
   }
+
+  /* ---------- герои из рисунка ---------- */
+  var ANIMS = [['dance', 'Танец'], ['hop', 'Прыжки'], ['sway', 'Покачивание'], ['boil', 'Дрожь линий'], ['none', 'Стоит']];
+  function ensureGrid() {
+    if (!music.id) { bgrid.id = null; return; }
+    if (bgrid.id === music.id || bgrid.busy || !window.DJ || !window.DJ.analyzeTrack) return;
+    bgrid.busy = true; var want = music.id;
+    window.DJ.analyzeTrack(want).then(function (r) { if (r && r.bpm) { bgrid.bpm = r.bpm; bgrid.off = r.off || 0; } bgrid.id = want; bgrid.busy = false; },
+      function () { bgrid.id = want; bgrid.busy = false; });
+  }
+  function beatPos() {
+    var mt = (music.id ? music.start : 0) + t, bpm = bgrid.id === music.id && music.id ? bgrid.bpm : 120, off = bgrid.id === music.id && music.id ? bgrid.off : 0;
+    return (mt - off) * bpm / 60;
+  }
+  function hash(n) { var x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); }
+  function charBox(c) {
+    var h = c.size * H, w = h * c.img.width / c.img.height; return { w: w, h: h, cx: c.x * W, cy: c.y * H };
+  }
+  function drawChars() {
+    if (!chars.length) return;
+    ensureGrid();
+    var b = beatPos(), fr = b - Math.floor(b), kick = Math.pow(1 - fr, 2.2), side = (Math.floor(b) % 2) ? 1 : -1;
+    chars.forEach(function (c, ci) {
+      if (!c.img || !c.img.width) return;
+      var bx = charBox(c), N = 28, amt = c.amt, ph = ci * 1.7;
+      var rot = 0, sq = 1, hop = 0, wave = 0, wavePh = 0, jit = 0;
+      if (c.anim === 'dance') { rot = side * 0.07 * amt * (0.4 + 0.6 * Math.sin(Math.PI * fr)); sq = 1 - 0.07 * amt * kick; wave = 0.05 * amt; wavePh = b * Math.PI + ph; }
+      else if (c.anim === 'hop') { hop = Math.abs(Math.sin(Math.PI * fr)) * 0.1 * H * amt; sq = 1 + (fr < 0.15 ? -0.1 * amt * (1 - fr / 0.15) : 0); wave = 0.02 * amt; wavePh = b * Math.PI; }
+      else if (c.anim === 'sway') { rot = Math.sin(t * 2.2 + ph) * 0.05 * amt; wave = 0.06 * amt; wavePh = t * 3 + ph; }
+      else if (c.anim === 'boil') { jit = 0.012 * amt; }
+      var fi = Math.floor(t * 8);
+      g.save();
+      g.translate(bx.cx, bx.cy + bx.h / 2 - hop); g.rotate(rot); g.scale(c.flip ? -1 : 1, sq);
+      if (c.shadow !== false) { g.save(); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
+      var sh = c.img.height / N;
+      for (var i = 0; i < N; i++) {
+        var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
+        if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
+        var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
+        g.drawImage(c.img, 0, i * sh, c.img.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
+      }
+      g.restore();
+      if (ci === selC && !exporting && tab === 'chars') {
+        g.save(); g.strokeStyle = accent(); g.lineWidth = Math.max(2, W / 240); g.setLineDash([W / 60, W / 90]);
+        g.strokeRect(bx.cx - bx.w / 2, bx.cy - bx.h / 2, bx.w, bx.h); g.restore();
+      }
+    });
+  }
+  function canvasXY(e) { var r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; }
+  function hitChar(x, y) {
+    for (var i = chars.length - 1; i >= 0; i--) { var c = chars[i]; if (!c.img) continue; var b = charBox(c); if (Math.abs(x - b.cx) <= b.w / 2 && Math.abs(y - b.cy) <= b.h / 2) return i; }
+    return -1;
+  }
+  cv.style.touchAction = 'none';
+  cv.addEventListener('pointerdown', function (e) {
+    if (!chars.length || tab !== 'chars') return;
+    var p = canvasXY(e), i = hitChar(p[0], p[1]); if (i < 0) return;
+    selC = i; drag = { i: i, dx: chars[i].x * W - p[0], dy: chars[i].y * H - p[1] };
+    try { cv.setPointerCapture(e.pointerId); } catch (er) {}
+    e.preventDefault(); paintPane();
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (!drag) return; var p = canvasXY(e), c = chars[drag.i];
+    c.x = clamp((p[0] + drag.dx) / W, 0, 1); c.y = clamp((p[1] + drag.dy) / H, 0, 1); if (!playing) draw();
+  });
+  function endDrag() { if (drag) { drag = null; saveProject(); } }
+  cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+
+  function mkChar(canvas, bid, m) {
+    var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false };
+    if (m) { c.x = m.x; c.y = m.y; c.size = m.size; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
+    return c;
+  }
+  function addChars(list) {
+    var n = list.length, i;
+    list.forEach(function (cd, k) {
+      var c = mkChar(cd.cv, 'ch' + Date.now().toString(36) + (uid++));
+      var asp = cd.cv.width / cd.cv.height;
+      c.size = Math.min(0.34, (1.6 / n) / asp * (W / H)); c.size = Math.max(0.12, c.size);
+      c.x = n === 1 ? 0.5 : (k + 0.5) / n; c.y = 0.95 - c.size / 2 - 0.03; if (cd.kind === 'sheet') { c.size = 0.5; c.y = 0.5; c.x = 0.5; c.anim = 'sway'; }
+      c.anim = cd.kind === 'sheet' ? 'sway' : 'dance';
+      c.blob = null; chars.push(c);
+      cd.cv.toBlob(function (bl) { c.blob = bl; saveProject(true); }, 'image/png');
+    });
+    selC = chars.length - 1; tab = 'chars'; paintTabs(); paintPane(); if (!playing) draw();
+    toast('Героев добавлено: ' + n + '. Двигай их пальцем по кадру');
+  }
+  var scanRes = null;
+  function openScan() {
+    $('#edScanFile').value = ''; $('#edScanFile').click();
+  }
+  $('#edScanFile').addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var box = $('#edScanList'), info = $('#edScanInfo'); box.textContent = ''; info.textContent = 'Ищу героев на рисунке…';
+    $('#edScan').hidden = false; $('#edScanAdd').hidden = true;
+    var url = URL.createObjectURL(f), im = new Image();
+    im.onload = function () {
+      setTimeout(function () {
+        var r; try { r = window.Scan.find(im); } catch (e) { r = null; }
+        URL.revokeObjectURL(url);
+        if (!r || !r.cands.length) { info.textContent = 'Не нашёл героев. Сфотографируй рисунок на светлом листе при хорошем свете, чтобы лист был виден целиком.'; return; }
+        scanRes = r;
+        info.textContent = 'Нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
+        r.cands.forEach(function (c) {
+          var b = el('button', 'sc-c' + (c.sel ? ' on' : '')); b.type = 'button';
+          var th = document.createElement('canvas'); th.width = c.cv.width; th.height = c.cv.height; th.getContext('2d').drawImage(c.cv, 0, 0); b.appendChild(th);
+          b.appendChild(el('i', '', c.kind === 'sheet' ? 'лист' : c.kind === 'text' ? 'надпись' : '✓'));
+          b.addEventListener('click', function () { c.sel = !c.sel; b.classList.toggle('on', c.sel); });
+          box.appendChild(b);
+        });
+        $('#edScanAdd').hidden = false;
+      }, 30);
+    };
+    im.onerror = function () { info.textContent = 'Не получилось открыть фото'; };
+    im.src = url;
+  });
+  $('#edScanAdd').addEventListener('click', function () {
+    var pick = scanRes ? scanRes.cands.filter(function (c) { return c.sel; }) : [];
+    if (!pick.length) { toast('Отметь хотя бы одного героя'); return; }
+    $('#edScan').hidden = true; addChars(pick);
+  });
+  $('#edScanClose').addEventListener('click', function () { $('#edScan').hidden = true; });
+
+  function paneChars(p) {
+    p.appendChild(chipRow([{ label: '📷 Сфотографировать / выбрать рисунок', on: true, fn: openScan }]));
+    if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
+    var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
+    var tl = el('div', 'ed-tl'); tl.style.padding = '2px 0';
+    chars.forEach(function (ch, i) {
+      var b = el('button', 'cl' + (i === selC ? ' on' : '')); b.type = 'button'; b.style.width = '56px'; b.style.height = '56px'; b.style.background = '#2a2d34';
+      var th = document.createElement('canvas'); th.width = ch.cv.width; th.height = ch.cv.height; th.style.cssText = 'width:100%;height:100%;object-fit:contain'; th.getContext('2d').drawImage(ch.cv, 0, 0); b.appendChild(th);
+      b.addEventListener('click', function () { selC = i; paintPane(); if (!playing) draw(); }); tl.appendChild(b);
+    });
+    p.appendChild(tl);
+    p.appendChild(chipRow(ANIMS.map(function (a) { return { label: a[1], on: c.anim === a[0], fn: function () { c.anim = a[0]; saveProject(); paintPane(); } }; }), 'Движение'));
+    p.appendChild(slider('Сила', 0.2, 2, 0.1, c.amt, function (v) { return f1(v) + '×'; }, function (v) { c.amt = v; saveProject(); }));
+    p.appendChild(slider('Размер', 0.08, 0.9, 0.01, c.size, function (v) { return Math.round(v * 100) + '%'; }, function (v) { c.size = v; saveProject(); if (!playing) draw(); }));
+    p.appendChild(chipRow([
+      { label: 'Отразить', fn: function () { c.flip = !c.flip; saveProject(); if (!playing) draw(); } },
+      { label: 'Удалить героя', fn: function () { chars.splice(selC, 1); selC = chars.length ? 0 : -1; saveProject(true); paintPane(); if (!playing) draw(); } }
+    ]));
+    p.appendChild(el('div', 'ed-hint', 'Тащи героя пальцем прямо по кадру. Ритм берётся из музыки ролика: выбери музыку на вкладке «Музыка».'));
+  }
   function draw() {
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
     if (clips.length) {
@@ -301,6 +445,7 @@
         else { drawClip(tr.a, tr.ai, prog(tr.a), 1, 0); drawClip(tr.b, tr.bi, prog(tr.b), e, 0); }
       } else drawClip(clips[i], i, prog(clips[i]), 1, 0);
     }
+    drawChars();
     drawTitles();
   }
 
@@ -339,7 +484,7 @@
   }
   function paintTabs() {
     var box = $('#edTabs'); box.textContent = '';
-    [['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['fx', 'Эффекты'], ['fmt', 'Формат']].forEach(function (x) {
+    [['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['chars', 'Герои'], ['fx', 'Эффекты'], ['fmt', 'Формат']].forEach(function (x) {
       var b = el('button', 'chip' + (tab === x[0] ? ' on' : ''), x[1]); b.type = 'button';
       b.addEventListener('click', function () { tab = x[0]; paintTabs(); paintPane(); });
       box.appendChild(b);
@@ -594,7 +739,7 @@
 
   function paintPane() {
     var p = $('#edPane'); p.textContent = '';
-    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else if (tab === 'fx') paneFx(p); else paneFmt(p);
+    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else if (tab === 'chars') paneChars(p); else if (tab === 'fx') paneFx(p); else paneFmt(p);
   }
 
   /* ---------- export ---------- */
@@ -673,6 +818,7 @@
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -686,8 +832,9 @@
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
-    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
+    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
       var have = {}; keys.forEach(function (k) { have[k] = 1; });
       return idb('blobs', 'readwrite', function (st) {
@@ -703,8 +850,9 @@
     if (restored || !window.indexedDB) return;
     restored = true;
     idb('meta', 'readonly', function (st) { return st.get('project'); }).then(function (meta) {
-      if (!meta || !meta.clips || !meta.clips.length || clips.length) return;
+      if (!meta || !meta.clips || (!meta.clips.length && !(meta.chars && meta.chars.length)) || clips.length) return;
       var ids = []; meta.clips.forEach(function (m) { if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
+      (meta.chars || []).forEach(function (m) { if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
       return Promise.all(ids.map(function (b) { return idb('blobs', 'readonly', function (st) { return st.get(b); }); })).then(function (arr) {
         if (clips.length) return;
         var blobs = {}, urls = {}; ids.forEach(function (b, i) { if (arr[i]) blobs[b] = arr[i]; });
@@ -717,6 +865,14 @@
           var url = urls[m.bid] || (urls[m.bid] = URL.createObjectURL(b));
           clips.push(buildClip(b, url, m.bid, m));
         });
+        chars = []; selC = -1;
+        (meta.chars || []).forEach(function (m) {
+          var b = blobs[m.bid]; if (!b) return;
+          var im = new Image(), ch = mkChar(im, m.bid, m); ch.blob = b; chars.push(ch);
+          im.onload = function () { ch.cv = im; if (!playing && openNow) draw(); if (tab === 'chars') paintPane(); };
+          im.src = URL.createObjectURL(b);
+        });
+        if (chars.length) selC = 0;
         sel = clips.length ? 0 : -1; applySize(); layout();
         var mm = meta.music;
         if (mm && mm.id && MM.find(mm.id)) { setMusic(mm.id); music.start = mm.start || 0; music.vol = mm.vol == null ? 0.8 : mm.vol; music.fade = mm.fade !== false; }

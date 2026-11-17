@@ -13,6 +13,7 @@
   <div class="ed-tl" id="edTl"></div>
   <div class="ed-tabs chips" id="edTabs"></div>
   <div class="ed-pane" id="edPane"></div>
+  <input type="file" id="edScanFile" accept="image/*" hidden>
   <input type="file" id="edFile" accept="video/*,image/*" multiple hidden>
 
   <div class="dj-pick" id="edPick" hidden>
@@ -43,6 +44,14 @@
         <button class="chip" id="edDoneDl" type="button">Скачать файл</button>
         <button class="chip" id="edDoneDrop" type="button">Выбросить</button>
       </div>
+    </div>
+  </div>
+  <div class="dj-pick" id="edScan" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Герои из рисунка">
+      <div class="dj-pick-head"><strong>Герои из рисунка</strong><button class="ghost" id="edScanClose" type="button">Закрыть</button></div>
+      <div class="hint2" id="edScanInfo"></div>
+      <div class="sc-list" id="edScanList"></div>
+      <div class="chips"><button class="chip on" id="edScanAdd" type="button" hidden>Добавить выбранных в ролик</button></div>
     </div>
   </div>
   <div class="dj-toast" id="edToast" hidden></div>

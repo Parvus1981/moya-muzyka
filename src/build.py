@@ -3,7 +3,7 @@ src = open('player.html', encoding='utf8').read()
 # DJ console lives in separate files and is inlined into the single-page build
 for ph, fn in (('/*DJ_CSS*/', 'dj.css'), ('<!--DJ_HTML-->', 'dj.html'), ('/*DJ_JS*/', 'dj.js'),
                ('/*LISTEN_CSS*/', 'listen.css'), ('<!--LISTEN_HTML-->', 'listen.html'), ('/*LISTEN_JS*/', 'listen.js'),
-               ('/*ED_CSS*/', 'ed.css'), ('<!--ED_HTML-->', 'ed.html'), ('/*ED_JS*/', 'ed.js')):
+               ('/*SCAN_JS*/', 'scan.js'), ('/*ED_CSS*/', 'ed.css'), ('<!--ED_HTML-->', 'ed.html'), ('/*ED_JS*/', 'ed.js')):
     assert ph in src, ph
     src = src.replace(ph, open(fn, encoding='utf8').read())
 ver = sys.argv[1] if len(sys.argv) > 1 else '1'

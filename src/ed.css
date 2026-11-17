@@ -38,3 +38,9 @@ body.ed-open { overflow: hidden; }
 .ed-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .ed-tabs::-webkit-scrollbar { display: none; }
 .ed-tabs .chip { flex: none; }
+
+.sc-list { display: flex; flex-wrap: wrap; gap: 8px; overflow-y: auto; max-height: 46vh; }
+.sc-c { position: relative; width: 96px; height: 110px; padding: 4px; border-radius: 10px; border: 2px solid var(--metal-edge); background: repeating-conic-gradient(#2a2d34 0 25%, #1f2227 0 50%) 0 0 / 14px 14px; display: grid; place-items: center; }
+.sc-c.on { border-color: var(--accent); box-shadow: 0 0 10px var(--glow); }
+.sc-c canvas { max-width: 100%; max-height: 100%; display: block; }
+.sc-c i { position: absolute; right: 4px; top: 2px; font-style: normal; font-size: 11px; color: #fff; text-shadow: 0 1px 3px #000; }
