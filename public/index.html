@@ -2200,7 +2200,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '6.6c09e8';
+  var APP_VERSION = '6.db39d7';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3674,7 +3674,7 @@ body.ed-open { overflow: hidden; }
       /* a tiny last piece looks like a glitch: merge it into the previous photo */
       if (seq.length > 1) {
         var lastC = seq[seq.length - 1], prevC = seq[seq.length - 2];
-        if (cd(lastC) < 1.5 && lastC.kind === 'image' && prevC.kind === 'image') { prevC.dur += cd(lastC); seq.pop(); }
+        if (cd(lastC) < 1.5 && prevC.kind === 'image') { prevC.dur += cd(lastC); seq.pop(); }
       }
       clips.forEach(function (c) { if (seq.indexOf(c) < 0 && c.kind === 'video') { try { c.el.pause(); } catch (e) {} } });
       clips = seq; sel = 0; layout(); cur = -1; setTime(0); paintTl();

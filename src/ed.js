@@ -408,7 +408,7 @@
       /* a tiny last piece looks like a glitch: merge it into the previous photo */
       if (seq.length > 1) {
         var lastC = seq[seq.length - 1], prevC = seq[seq.length - 2];
-        if (cd(lastC) < 1.5 && lastC.kind === 'image' && prevC.kind === 'image') { prevC.dur += cd(lastC); seq.pop(); }
+        if (cd(lastC) < 1.5 && prevC.kind === 'image') { prevC.dur += cd(lastC); seq.pop(); }
       }
       clips.forEach(function (c) { if (seq.indexOf(c) < 0 && c.kind === 'video') { try { c.el.pause(); } catch (e) {} } });
       clips = seq; sel = 0; layout(); cur = -1; setTime(0); paintTl();
