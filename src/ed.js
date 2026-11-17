@@ -15,6 +15,7 @@
   var clips = [], titles = [], sel = -1, selT = -1, tab = 'clip', uid = 0, total = 0;
   var music = { id: null, title: '', el: null, node: null, gain: null, url: null, start: 0, vol: 0.8, fade: true, dur: 0, status: '' };
   var origVol = 1;
+  var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
   var exporting = false, recorder = null, chunks = [], recMime = '', doneFile = null, doneUrl = null, cancelled = false;
@@ -189,7 +190,7 @@
           else if (c.el.paused) c.el.play().catch(function () {});
         }
         var nx = clips[i + 1];
-        if (nx && nx.kind === 'video' && !nx.pre && t >= c.end - 0.8) { nx.pre = true; try { nx.el.currentTime = nx.inp; } catch (e) {} }
+        if (nx && nx.kind === 'video' && !nx.pre && t >= c.end - Math.max(0.8, trans.dur / 2 + 0.4)) { nx.pre = true; try { nx.el.currentTime = nx.inp; } catch (e) {} }
       }
     }
     if (music.gain) {
@@ -207,20 +208,28 @@
 
   /* ---------- drawing ---------- */
   function srcSize(c) { return c.kind === 'image' ? [c.el.naturalWidth, c.el.naturalHeight] : [c.el.videoWidth, c.el.videoHeight]; }
-  function drawClip(c) {
+  function drawClip(c, idx, prog, alpha, dx) {
     if (!c || !c.ready) return;
     if (c.kind === 'video' && c.el.readyState < 2) return;
     var sz = srcSize(c), sw = sz[0], sh = sz[1]; if (!sw || !sh) return;
-    var cover = Math.max(W / sw, H / sh);
+    var z = 1;
+    if (c.kind === 'image' && kbAmt > 0) z = (idx % 2 === 0) ? 1 + kbAmt * prog : 1 + kbAmt * (1 - prog);
+    g.save();
+    if (alpha < 1) g.globalAlpha = alpha;
+    if (dx) g.translate(dx, 0);
     if (c.fit === 'fit') {
       var k0 = Math.max(bg.width / sw, bg.height / sh);
       bgg.drawImage(c.el, (bg.width - sw * k0) / 2, (bg.height - sh * k0) / 2, sw * k0, sh * k0);
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       g.drawImage(bg, 0, 0, W, H);
       g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H);
-      var k = Math.min(W / sw, H / sh);
+      var k = Math.min(W / sw, H / sh) * z;
       g.drawImage(c.el, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
-    } else g.drawImage(c.el, (W - sw * cover) / 2, (H - sh * cover) / 2, sw * cover, sh * cover);
+    } else {
+      var kk = Math.max(W / sw, H / sh) * z;
+      g.drawImage(c.el, (W - sw * kk) / 2, (H - sh * kk) / 2, sw * kk, sh * kk);
+    }
+    g.restore();
   }
   var SIZES = { S: 0.055, M: 0.08, L: 0.115 };
   function wrapText(txt, maxW) {
@@ -265,9 +274,33 @@
       g.restore();
     });
   }
+  function ease(x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+  function prog(c) { return clamp((t - c.start) / cd(c), 0, 1); }
+  function okPair(a, b) { return trans.type !== 'none' && (trans.scope === 'all' || (a.kind === 'image' && b.kind === 'image')); }
+  /* переход «по центру» границы: полпути до стыка и полпути после */
+  function trAt(i) {
+    if (trans.type === 'none') return null;
+    var c = clips[i], nx = clips[i + 1], pv = clips[i - 1], h;
+    if (nx && okPair(c, nx)) {
+      h = Math.min(trans.dur / 2, cd(c) / 2.2, cd(nx) / 2.2);
+      if (t >= c.end - h) return { a: c, b: nx, ai: i, bi: i + 1, p: (t - (c.end - h)) / (2 * h) };
+    }
+    if (pv && okPair(pv, c)) {
+      h = Math.min(trans.dur / 2, cd(c) / 2.2, cd(pv) / 2.2);
+      if (t <= c.start + h) return { a: pv, b: c, ai: i - 1, bi: i, p: (t - (c.start - h)) / (2 * h) };
+    }
+    return null;
+  }
   function draw() {
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    if (clips.length) drawClip(clips[indexAt(t)]);
+    if (clips.length) {
+      var i = indexAt(t), tr = trAt(i);
+      if (tr) {
+        var e = ease(tr.p);
+        if (trans.type === 'slide') { drawClip(tr.a, tr.ai, prog(tr.a), 1, -e * W); drawClip(tr.b, tr.bi, prog(tr.b), 1, (1 - e) * W); }
+        else { drawClip(tr.a, tr.ai, prog(tr.a), 1, 0); drawClip(tr.b, tr.bi, prog(tr.b), e, 0); }
+      } else drawClip(clips[i], i, prog(clips[i]), 1, 0);
+    }
     drawTitles();
   }
 
@@ -306,7 +339,7 @@
   }
   function paintTabs() {
     var box = $('#edTabs'); box.textContent = '';
-    [['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['fmt', 'Формат']].forEach(function (x) {
+    [['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['fx', 'Эффекты'], ['fmt', 'Формат']].forEach(function (x) {
       var b = el('button', 'chip' + (tab === x[0] ? ' on' : ''), x[1]); b.type = 'button';
       b.addEventListener('click', function () { tab = x[0]; paintTabs(); paintPane(); });
       box.appendChild(b);
@@ -527,6 +560,22 @@
     p.appendChild(chipRow([{ label: 'Удалить титр', fn: function () { titles.splice(selT, 1); selT = Math.min(selT, titles.length - 1); paintPane(); } }]));
   }
 
+  /* ---------- tab: effects ---------- */
+  function paneFx(p) {
+    function T(k, label) { return { label: label, on: trans.type === k, fn: function () { trans.type = k; paintPane(); } }; }
+    p.appendChild(chipRow([T('none', 'Нет'), T('fade', 'Плавный'), T('slide', 'Сдвиг')], 'Переход'));
+    p.appendChild(slider('Длительность', 0.2, 1.5, 0.1, trans.dur, function (x) { return f1(x) + ' с'; }, function (x) { trans.dur = x; }));
+    p.appendChild(chipRow([
+      { label: 'Только фото', on: trans.scope === 'photos', fn: function () { trans.scope = 'photos'; paintPane(); } },
+      { label: 'Везде', on: trans.scope === 'all', fn: function () { trans.scope = 'all'; paintPane(); } }
+    ], 'Где'));
+    function K(v, label) { return { label: label, on: Math.abs(kbAmt - v) < 0.001, fn: function () { kbAmt = v; paintPane(); } }; }
+    p.appendChild(chipRow([K(0, 'Нет'), K(0.06, 'Лёгкий'), K(0.12, 'Сильный')], 'Наезд'));
+    p.appendChild(el('div', 'ed-hint', 'Переход проходит вокруг стыка: конец одного кадра растворяется в начале следующего, общая длина ролика не меняется. «Наезд» слегка приближает и отдаляет каждое фото по очереди, чтобы кадр жил.'));
+    p.appendChild(el('div', 'ed-hint', '«Везде» добавляет переход и на стыках с видео. Там первый кадр следующего видео на время перехода стоит неподвижно, и это стоит проверить на настоящих клипах.'));
+    p.appendChild(el('div', 'ed-hint', 'Чтобы посмотреть, перемотай к стыку и нажми ▶.'));
+  }
+
   /* ---------- tab: format ---------- */
   function paneFmt(p) {
     p.appendChild(chipRow(Object.keys(RATIOS).map(function (k) { return { label: k + (k === '9:16' ? ' рилсы' : k === '1:1' ? ' квадрат' : ' широкий'), on: ratioKey === k, fn: function () { ratioKey = k; applySize(); paintPane(); } }; }), 'Формат'));
@@ -545,7 +594,7 @@
 
   function paintPane() {
     var p = $('#edPane'); p.textContent = '';
-    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else paneFmt(p);
+    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else if (tab === 'fx') paneFx(p); else paneFmt(p);
   }
 
   /* ---------- export ---------- */
@@ -623,7 +672,7 @@
     });
   }
   function sigOf() {
-    return JSON.stringify([ratioKey, quality, origVol, titles, music.id, music.start, music.vol, music.fade,
+    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -635,7 +684,7 @@
     if (saving) { again = true; return; }
     var sig = sigOf(); if (!force && sig === lastSig) return;
     saving = true;
-    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, titles: titles,
+    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
     var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
@@ -661,6 +710,8 @@
         var blobs = {}, urls = {}; ids.forEach(function (b, i) { if (arr[i]) blobs[b] = arr[i]; });
         ratioKey = RATIOS[meta.ratioKey] ? meta.ratioKey : '9:16'; quality = meta.quality || 720;
         origVol = meta.origVol == null ? 1 : meta.origVol; titles = meta.titles || [];
+        if (meta.trans) trans = { type: meta.trans.type || 'fade', dur: meta.trans.dur || 0.6, scope: meta.trans.scope || 'photos' };
+        if (meta.kbAmt != null) kbAmt = meta.kbAmt;
         meta.clips.forEach(function (m) {
           var b = blobs[m.bid]; if (!b) return;
           var url = urls[m.bid] || (urls[m.bid] = URL.createObjectURL(b));
@@ -722,5 +773,5 @@
   });
   var btn = document.getElementById('edBtn'); if (btn) btn.addEventListener('click', openEd);
   applySize(); layout();
-  window.Editor = { open: openEd, _s: function () { return { clips: clips, titles: titles, total: total, t: t, music: music }; } };
+  window.Editor = { open: openEd, _set: function (x) { pause(); setTime(x); }, _s: function () { return { clips: clips, titles: titles, total: total, t: t, music: music }; } };
 })();

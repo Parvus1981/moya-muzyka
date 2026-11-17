@@ -34,3 +34,7 @@ body.ed-open { overflow: hidden; }
 .ed textarea.search { min-height: 64px; resize: vertical; font: inherit; }
 .ed-busy-t { text-align: center; font-family: var(--font-mono); color: var(--accent); }
 #edBusy, #edDone { z-index: 13; }
+
+.ed-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.ed-tabs::-webkit-scrollbar { display: none; }
+.ed-tabs .chip { flex: none; }
