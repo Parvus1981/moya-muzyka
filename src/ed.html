@@ -55,5 +55,13 @@
       <div class="chips"><button class="chip on" id="edScanAdd" type="button" hidden>Добавить выбранных в ролик</button></div>
     </div>
   </div>
+  <div class="dj-pick" id="edCam" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Камера">
+      <div class="dj-pick-head"><strong>Камера</strong><button class="ghost" id="edCamClose" type="button">Закрыть</button></div>
+      <video id="edCamV" playsinline muted autoplay style="width:100%;max-height:56vh;background:#000;border-radius:12px;object-fit:contain"></video>
+      <div class="hint2" id="edCamInfo"></div>
+      <div class="chips"><button class="chip on" id="edCamShot" type="button">● Снять</button><button class="chip" id="edCamFlip" type="button">Другая камера</button></div>
+    </div>
+  </div>
   <div class="dj-toast" id="edToast" hidden></div>
 </div>

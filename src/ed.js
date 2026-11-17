@@ -383,8 +383,8 @@
   function openScan(how) {
     var i = $(how === 'cam' ? '#edScanCam' : '#edScanFile'); i.value = ''; i.click();
   }
-  function onScanPick() {
-    var f = this.files && this.files[0]; if (!f) return;
+  function onScanPick() { var f = this.files && this.files[0]; if (f) scanFile(f); }
+  function scanFile(f) {
     var box = $('#edScanList'), info = $('#edScanInfo'); box.textContent = ''; info.textContent = 'Ищу героев на рисунке…';
     $('#edScan').hidden = false; $('#edScanAdd').hidden = true;
     var url = URL.createObjectURL(f), im = new Image();
@@ -408,6 +408,35 @@
     im.onerror = function () { info.textContent = 'Не получилось открыть фото'; };
     im.src = url;
   }
+  /* своя камера: на Android выбор файла камеру не даёт, поэтому снимаем прямо в приложении */
+  var camStream = null, camFace = 'environment', camMode = 'scan';
+  function stopCam() { if (camStream) { camStream.getTracks().forEach(function (tr) { tr.stop(); }); camStream = null; } $('#edCamV').srcObject = null; }
+  function startCam() {
+    stopCam(); var info = $('#edCamInfo'); info.textContent = 'Включаю камеру…';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { info.textContent = 'Камера в этом окне недоступна. Используй «Из галереи».'; return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: camFace }, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false }).then(function (st) {
+      if ($('#edCam').hidden) { st.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+      camStream = st; var v = $('#edCamV'); v.srcObject = st; v.play().catch(function () {});
+      info.textContent = camMode === 'scan' ? 'Положи рисунок на ровную поверхность при хорошем свете, чтобы лист был виден целиком.' : 'Снимок добавится в ролик как фото.';
+    }, function (e) {
+      info.textContent = (e && e.name === 'NotAllowedError') ? 'Нет доступа к камере. Разреши камеру для приложения в настройках телефона (Приложения → Моя музыка → Разрешения) и нажми «Другая камера».' : 'Не удалось включить камеру (' + (e && e.name || 'ошибка') + '). Можно снять в обычной камере и выбрать «Из галереи».';
+    });
+  }
+  function openCam(mode) { camMode = mode; $('#edCam').hidden = false; startCam(); }
+  function closeCam() { stopCam(); $('#edCam').hidden = true; }
+  $('#edCamClose').addEventListener('click', closeCam);
+  $('#edCamFlip').addEventListener('click', function () { camFace = camFace === 'environment' ? 'user' : 'environment'; startCam(); });
+  $('#edCamShot').addEventListener('click', function () {
+    var v = $('#edCamV'); if (!camStream || !v.videoWidth) { toast('Камера ещё не готова'); return; }
+    var c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+    var mode = camMode;
+    c.toBlob(function (bl) {
+      if (!bl) { toast('Не получилось сохранить снимок'); return; }
+      var f = new File([bl], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+      closeCam();
+      if (mode === 'scan') scanFile(f); else { addFiles([f]); toast('Фото добавлено в ролик'); }
+    }, 'image/jpeg', 0.92);
+  });
   $('#edScanFile').addEventListener('change', onScanPick); $('#edScanCam').addEventListener('change', onScanPick);
   $('#edScanAdd').addEventListener('click', function () {
     var pick = scanRes ? scanRes.cands.filter(function (c) { return c.sel; }) : [];
@@ -417,7 +446,7 @@
   $('#edScanClose').addEventListener('click', function () { $('#edScan').hidden = true; });
 
   function paneChars(p) {
-    p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openScan('cam'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
+    p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openCam('scan'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
     var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
     var tl = el('div', 'ed-tl'); tl.style.padding = '2px 0';
@@ -482,6 +511,9 @@
     var add = el('button', 'cl add', '+'); add.type = 'button'; add.setAttribute('aria-label', 'Добавить клип');
     add.addEventListener('click', function () { $('#edFile').click(); });
     box.appendChild(add);
+    var cam = el('button', 'cl add', '📷'); cam.type = 'button'; cam.style.fontSize = '24px'; cam.setAttribute('aria-label', 'Снять фото камерой');
+    cam.addEventListener('click', function () { openCam('clip'); });
+    box.appendChild(cam);
   }
   function paintTabs() {
     var box = $('#edTabs'); box.textContent = '';
@@ -900,7 +932,7 @@
   function closeEd(fromPop) {
     if (!openNow) return;
     if (exporting) cancelExport();
-    pause(); closeDone(false);
+    closeCam(); pause(); closeDone(false);
     saveProject(); clearInterval(saveTimer);
     openNow = false; cancelAnimationFrame(raf);
     root.hidden = true; document.body.classList.remove('ed-open');
@@ -909,7 +941,7 @@
   window.addEventListener('popstate', function () { if (openNow) closeEd(true); });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || !openNow) return;
-    if (!$('#edPick').hidden) $('#edPick').hidden = true; else if (!$('#edDone').hidden) closeDone(false); else if (!exporting) closeEd();
+    if (!$('#edCam').hidden) closeCam(); else if (!$('#edPick').hidden) $('#edPick').hidden = true; else if (!$('#edDone').hidden) closeDone(false); else if (!exporting) closeEd();
   });
 
   $('#edClose').addEventListener('click', function () { closeEd(); });
