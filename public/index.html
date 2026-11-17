@@ -2200,7 +2200,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '6.db39d7';
+  var APP_VERSION = '7.96adb7';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3334,6 +3334,39 @@ body.ed-open { overflow: hidden; }
 
   /* ---------- clips ---------- */
   var IMG_RE = /\.(jpe?g|png|webp|gif|bmp|avif)$/i;
+  var bidSeq = 0;
+  function newBid() { return 'c' + Date.now().toString(36) + (++bidSeq); }
+  /* saved != null: восстановление из сохранённого проекта (обрезки и настройки берём оттуда) */
+  function buildClip(f, url, bid, saved) {
+    var isImg = saved ? saved.kind === 'image' : (/^image\//.test(f.type) || IMG_RE.test(f.name));
+    var c = { id: ++uid, name: saved ? saved.name : f.name, url: url, bid: bid, blob: f, kind: isImg ? 'image' : 'video', el: null,
+      src: saved ? saved.src || 0 : 0, inp: saved ? saved.inp || 0 : 0, out: saved ? saved.out || 0 : 0, dur: saved ? saved.dur || 3 : 3,
+      fit: saved ? saved.fit || 'fill' : 'fill', sound: saved ? saved.sound !== false : true, thumb: saved ? saved.thumb || '' : '',
+      node: null, gain: null, pre: false, ready: false, start: 0, end: 0 };
+    if (isImg) {
+      var im = new Image();
+      im.onload = function () { c.ready = true; c.el = im; if (!c.thumb) thumbOf(c); layout(); paintTl(); };
+      im.onerror = function () { toast('Не получилось открыть «' + c.name + '»'); drop(c); };
+      c.el = im; im.src = url;
+    } else {
+      var v = document.createElement('video');
+      v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+      c.el = v;
+      v.onloadedmetadata = function () {
+        c.src = isFinite(v.duration) ? v.duration : 0;
+        if (saved) { c.inp = clamp(c.inp, 0, Math.max(0, c.src - 0.2)); c.out = clamp(c.out || c.src, c.inp + 0.2, Math.max(c.inp + 0.2, c.src)); }
+        else { c.inp = 0; c.out = c.src; }
+        c.ready = true;
+        layout(); paintTl(); paintPane();
+        try { v.currentTime = saved ? c.inp : Math.min(0.1, c.src / 2); } catch (e) {}
+      };
+      v.onseeked = function () { if (!c.thumb && v.videoWidth) { thumbOf(c); try { v.currentTime = c.inp; } catch (e) {} paintTl(); } };
+      v.onerror = function () { toast('Не получилось открыть «' + c.name + '». Попробуй mp4.'); drop(c); };
+      v.src = url;
+      ensureAudio(); connectClip(c);
+    }
+    return c;
+  }
   function addFiles(list) {
     var files = Array.prototype.slice.call(list), n = 0;
     files.forEach(function (f) {
@@ -3341,29 +3374,7 @@ body.ed-open { overflow: hidden; }
       var isVid = /^video\//.test(f.type) || /\.(mp4|m4v|mov|webm|mkv|3gp)$/i.test(f.name);
       if (!isImg && !isVid) return;
       n++;
-      var url = URL.createObjectURL(f);
-      var c = { id: ++uid, name: f.name, url: url, kind: isImg ? 'image' : 'video', el: null, src: 0, inp: 0, out: 0, dur: 3, fit: 'fill',
-        sound: true, thumb: '', node: null, gain: null, pre: false, ready: false, start: 0, end: 0 };
-      if (isImg) {
-        var im = new Image();
-        im.onload = function () { c.ready = true; c.el = im; thumbOf(c); layout(); paintTl(); };
-        im.onerror = function () { toast('Не получилось открыть «' + f.name + '»'); drop(c); };
-        c.el = im; im.src = url;
-        clips.push(c);
-      } else {
-        var v = document.createElement('video');
-        v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
-        c.el = v;
-        v.onloadedmetadata = function () {
-          c.src = isFinite(v.duration) ? v.duration : 0; c.inp = 0; c.out = c.src; c.ready = true;
-          layout(); paintTl(); paintPane(); try { v.currentTime = Math.min(0.1, c.src / 2); } catch (e) {}
-        };
-        v.onseeked = function () { if (!c.thumb && v.videoWidth) { thumbOf(c); try { v.currentTime = c.inp; } catch (e) {} paintTl(); } };
-        v.onerror = function () { toast('Не получилось открыть «' + f.name + '». Попробуй mp4.'); drop(c); };
-        v.src = url;
-        ensureAudio(); connectClip(c);
-        clips.push(c);
-      }
+      clips.push(buildClip(f, URL.createObjectURL(f), newBid(), null));
     });
     if (!n) { toast('Нужны видео или фото'); return; }
     if (sel < 0) sel = 0;
@@ -3580,7 +3591,7 @@ body.ed-open { overflow: hidden; }
     if (t < c.start || t > c.end || local < 0.3 || cd(c) - local < 0.3) { toast('Поставь перемотку внутрь клипа, не у самого края'); return; }
     var v = document.createElement('video');
     v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.src = c.url;
-    var n = { id: ++uid, name: c.name, url: c.url, kind: 'video', el: v, src: c.src, inp: c.inp + local, out: c.out, dur: 0, fit: c.fit, sound: c.sound,
+    var n = { id: ++uid, name: c.name, url: c.url, bid: c.bid, blob: c.blob, kind: 'video', el: v, src: c.src, inp: c.inp + local, out: c.out, dur: 0, fit: c.fit, sound: c.sound,
       thumb: '', node: null, gain: null, pre: false, ready: true, start: 0, end: 0 };
     c.out = c.inp + local;
     clips.splice(sel + 1, 0, n);
@@ -3632,7 +3643,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---------- fit the whole reel to the song ---------- */
   function cloneClip(c) {
-    var n = { id: ++uid, name: c.name, url: c.url, kind: c.kind, el: null, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit,
+    var n = { id: ++uid, name: c.name, url: c.url, bid: c.bid, blob: c.blob, kind: c.kind, el: null, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit,
       sound: c.sound, thumb: c.thumb, node: null, gain: null, pre: false, ready: true, start: 0, end: 0 };
     if (c.kind === 'image') n.el = c.el;
     else {
@@ -3791,10 +3802,11 @@ body.ed-open { overflow: hidden; }
       { label: 'Вписать всем', fn: function () { clips.forEach(function (c) { c.fit = 'fit'; }); toast('Кадр: вписать, края не обрезаются'); } }
     ], 'Кадр'));
     p.appendChild(el('div', 'ed-hint', 'Для рилсов подходит 9:16 и 720p: ролик получается лёгким и чётким. 1080p весит больше и на слабом телефоне может писаться рывками.'));
-    p.appendChild(el('div', 'ed-hint', 'Проект живёт, пока приложение открыто. После перезапуска его придётся собрать заново, поэтому экспортируй готовое.'));
-    p.appendChild(chipRow([{ label: 'Начать заново', fn: function () {
-      pause(); clips.slice().forEach(function (c) { try { URL.revokeObjectURL(c.url); } catch (e) {} });
-      clips = []; titles = []; sel = -1; selT = -1; cur = -1; t = 0; layout(); clearMusic(); paintTl(); paintPane(); } }]));
+    p.appendChild(el('div', 'ed-hint', 'Проект сохраняется на телефоне сам и вернётся после перезапуска приложения. Сейчас он занимает ' + (projectMB() < 10 ? f1(projectMB()) : Math.round(projectMB())) + ' МБ: туда попадают копии твоих фото и видео.'));
+    p.appendChild(chipRow([{ label: resetAsk ? 'Точно удалить проект?' : 'Начать заново', on: resetAsk, fn: function () {
+      if (!resetAsk) { resetAsk = true; paintPane(); setTimeout(function () { if (resetAsk) { resetAsk = false; if (tab === 'fmt') paintPane(); } }, 4000); return; }
+      resetAsk = false; pause(); clips.slice().forEach(function (c) { try { URL.revokeObjectURL(c.url); } catch (e) {} });
+      clips = []; titles = []; sel = -1; selT = -1; cur = -1; t = 0; layout(); clearMusic(); paintTl(); paintPane(); saveProject(true); } }]));
   }
 
   function paintPane() {
@@ -3856,6 +3868,80 @@ body.ed-open { overflow: hidden; }
     if (dropIt && doneUrl) { v.removeAttribute('src'); v.load(); URL.revokeObjectURL(doneUrl); doneUrl = null; doneFile = null; }
   }
 
+  /* ---------- автосохранение проекта (IndexedDB на телефоне) ---------- */
+  var dbp = null, lastSig = '', saving = false, again = false, restored = false, saveTimer = 0, resetAsk = false;
+  function db() {
+    if (dbp) return dbp;
+    dbp = new Promise(function (res, rej) {
+      var r = indexedDB.open('mm-editor', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('meta'); r.result.createObjectStore('blobs'); };
+      r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+    });
+    return dbp;
+  }
+  function idb(store, mode, fn) {
+    return db().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(store, mode), rq = fn(tx.objectStore(store));
+        tx.oncomplete = function () { res(rq && rq.result !== undefined ? rq.result : undefined); };
+        tx.onerror = tx.onabort = function () { rej(tx.error); };
+      });
+    });
+  }
+  function sigOf() {
+    return JSON.stringify([ratioKey, quality, origVol, titles, music.id, music.start, music.vol, music.fade,
+      clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
+  }
+  function projectMB() {
+    var seen = {}, sum = 0; clips.forEach(function (c) { if (c.blob && !seen[c.bid]) { seen[c.bid] = 1; sum += c.blob.size; } });
+    return Math.max(0.1, sum / 1e6);
+  }
+  function saveProject(force) {
+    if (!window.indexedDB) return;
+    if (saving) { again = true; return; }
+    var sig = sigOf(); if (!force && sig === lastSig) return;
+    saving = true;
+    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, titles: titles,
+      music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
+      clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
+    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
+    idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
+      var have = {}; keys.forEach(function (k) { have[k] = 1; });
+      return idb('blobs', 'readwrite', function (st) {
+        Object.keys(blobs).forEach(function (b) { if (!have[b]) st.put(blobs[b], b); });
+        keys.forEach(function (k) { if (!blobs[k]) st.delete(k); });
+      });
+    }).then(function () { return idb('meta', 'readwrite', function (st) { st.put(meta, 'project'); }); })
+      .then(function () { lastSig = sig; })
+      .catch(function () { lastSig = sig; toast('Не хватило места на телефоне: проект не сохранён'); })
+      .then(function () { saving = false; if (again) { again = false; saveProject(); } });
+  }
+  function restoreProject() {
+    if (restored || !window.indexedDB) return;
+    restored = true;
+    idb('meta', 'readonly', function (st) { return st.get('project'); }).then(function (meta) {
+      if (!meta || !meta.clips || !meta.clips.length || clips.length) return;
+      var ids = []; meta.clips.forEach(function (m) { if (ids.indexOf(m.bid) < 0) ids.push(m.bid); });
+      return Promise.all(ids.map(function (b) { return idb('blobs', 'readonly', function (st) { return st.get(b); }); })).then(function (arr) {
+        if (clips.length) return;
+        var blobs = {}, urls = {}; ids.forEach(function (b, i) { if (arr[i]) blobs[b] = arr[i]; });
+        ratioKey = RATIOS[meta.ratioKey] ? meta.ratioKey : '9:16'; quality = meta.quality || 720;
+        origVol = meta.origVol == null ? 1 : meta.origVol; titles = meta.titles || [];
+        meta.clips.forEach(function (m) {
+          var b = blobs[m.bid]; if (!b) return;
+          var url = urls[m.bid] || (urls[m.bid] = URL.createObjectURL(b));
+          clips.push(buildClip(b, url, m.bid, m));
+        });
+        sel = clips.length ? 0 : -1; applySize(); layout();
+        var mm = meta.music;
+        if (mm && mm.id && MM.find(mm.id)) { setMusic(mm.id); music.start = mm.start || 0; music.vol = mm.vol == null ? 0.8 : mm.vol; music.fade = mm.fade !== false; }
+        lastSig = sigOf(); paintTabs(); paintTl(); paintPane();
+        if (clips.length) toast('Проект восстановлен: клипов ' + clips.length);
+      });
+    }).catch(function () {});
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden' && openNow) saveProject(); });
+
   /* ---------- open / close ---------- */
   function openEd() {
     if (openNow) return;
@@ -3866,11 +3952,14 @@ body.ed-open { overflow: hidden; }
     try { history.pushState({ ed: 1 }, ''); } catch (e) {}
     applySize(); layout(); paintTabs(); paintTl(); paintPane(); paintPlay();
     raf = requestAnimationFrame(tick);
+    restoreProject();
+    clearInterval(saveTimer); saveTimer = setInterval(function () { saveProject(); }, 2500);
   }
   function closeEd(fromPop) {
     if (!openNow) return;
     if (exporting) cancelExport();
     pause(); closeDone(false);
+    saveProject(); clearInterval(saveTimer);
     openNow = false; cancelAnimationFrame(raf);
     root.hidden = true; document.body.classList.remove('ed-open');
     if (!fromPop) { try { if (history.state && history.state.ed) history.back(); } catch (e) {} }
