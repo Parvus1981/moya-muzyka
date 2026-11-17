@@ -339,7 +339,7 @@
       }));
       p.appendChild(el('div', 'ed-hint', 'В ролике: ' + f1(cd(c)) + ' с из ' + f1(c.src) + ' с'));
     } else {
-      p.appendChild(slider('Длительность', 1, 12, 0.1, c.dur, function (x) { return f1(x) + ' с'; }, function (x) { c.dur = x; layout(); paintTl(); }));
+      p.appendChild(slider('Длительность', 1, 30, 0.1, c.dur, function (x) { return f1(x) + ' с'; }, function (x) { c.dur = x; layout(); paintTl(); }));
     }
     p.appendChild(chipRow([
       { label: 'Заполнить', on: c.fit === 'fill', fn: function () { c.fit = 'fill'; paintPane(); } },
@@ -362,6 +362,61 @@
     if (rs.length >= 2) { rs[0].value = c.inp; rs[1].value = c.out; paintRange(rs[0]); paintRange(rs[1]);
       var vs = p.querySelectorAll('.v'); if (vs.length >= 2) { vs[0].textContent = f1(c.inp); vs[1].textContent = f1(c.out); } }
     var h = p.querySelectorAll('.ed-hint'); if (h.length) h[h.length - 1].textContent = 'В ролике: ' + f1(cd(c)) + ' с из ' + f1(c.src) + ' с';
+  }
+
+  /* ---------- fit the whole reel to the song ---------- */
+  function cloneClip(c) {
+    var n = { id: ++uid, name: c.name, url: c.url, kind: c.kind, el: null, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit,
+      sound: c.sound, thumb: c.thumb, node: null, gain: null, pre: false, ready: true, start: 0, end: 0 };
+    if (c.kind === 'image') n.el = c.el;
+    else {
+      var v = document.createElement('video');
+      v.playsInline = true; v.preload = 'metadata'; v.setAttribute('playsinline', ''); v.src = c.url; n.el = v;
+      v.onloadedmetadata = function () { try { v.currentTime = n.inp; } catch (e) {} };
+      ensureAudio(); connectClip(n);
+    }
+    return n;
+  }
+  function fitToSong() {
+    if (!music.id) { toast('Сначала выбери музыку'); return; }
+    if (!clips.length) { toast('Сначала добавь клипы'); return; }
+    if (clips.some(function (c) { return !c.ready; })) { toast('Клипы ещё читаются, подожди секунду'); return; }
+    var songLen = music.el && isFinite(music.el.duration) && music.el.duration > 0 ? music.el.duration : music.dur;
+    if (!songLen) { toast('Не удалось узнать длину песни'); return; }
+    music.status = 'Считаю ритм и подгоняю ролик под песню…'; paintPane();
+    var run = function (r) {
+      var P = r && r.bpm ? 60 / r.bpm : 0;
+      if (P) music.start = ((r.off % P) + P) % P;
+      var T = Math.max(5, songLen - music.start);
+      var base = clips.slice(), imgs = base.filter(function (c) { return c.kind === 'image'; }), n = imgs.length;
+      var F = base.reduce(function (a, c) { return a + (c.kind === 'video' ? cd(c) : 0); }, 0);
+      var reps = n ? Math.max(1, Math.round(T / (n * 4.5 + F))) : Math.max(1, Math.ceil(T / Math.max(F, 1)));
+      var imgDur = 0;
+      if (n) { while (reps > 1 && (T / reps - F) / n < 1.5) reps--; imgDur = clamp((T / reps - F) / n, 1.5, 30); if (P) imgDur = Math.max(1, Math.round(imgDur / P)) * P; }
+      var seq = [], k, j;
+      for (k = 0; k < reps; k++) base.forEach(function (c) { seq.push(k === 0 ? c : cloneClip(c)); });
+      seq.forEach(function (c) { if (c.kind === 'image') c.dur = imgDur; });
+      var sum = 0; seq.forEach(function (c) { sum += cd(c); });
+      /* last photo absorbs the small difference so the reel ends exactly with the song */
+      for (j = seq.length - 1; j >= 0 && seq[j].kind !== 'image'; j--);
+      if (sum < T && j >= 0) seq[j].dur += T - sum;
+      else if (sum < T) { var lv = seq[seq.length - 1]; lv.out = Math.min(lv.src, lv.out + (T - sum)); }
+      /* too long: cut the tail */
+      var acc = 0, cut = seq.length;
+      for (k = 0; k < seq.length; k++) { var d = cd(seq[k]); if (acc + d >= T - 0.01) { cut = k + 1; var rest = T - acc; if (seq[k].kind === 'image') seq[k].dur = Math.max(0.5, rest); else seq[k].out = seq[k].inp + Math.max(0.5, rest); break; } acc += d; }
+      seq.length = cut;
+      /* a tiny last piece looks like a glitch: merge it into the previous photo */
+      if (seq.length > 1) {
+        var lastC = seq[seq.length - 1], prevC = seq[seq.length - 2];
+        if (cd(lastC) < 1.5 && lastC.kind === 'image' && prevC.kind === 'image') { prevC.dur += cd(lastC); seq.pop(); }
+      }
+      clips.forEach(function (c) { if (seq.indexOf(c) < 0 && c.kind === 'video') { try { c.el.pause(); } catch (e) {} } });
+      clips = seq; sel = 0; layout(); cur = -1; setTime(0); paintTl();
+      music.status = 'Готово: ролик ' + fmt(total) + ' (вся песня)' + (reps > 1 ? ', клипы идут по кругу ×' + reps : '') + (P ? ', склейки на долях ' + (Math.round(60 / P * 10) / 10) + ' BPM' : '') + '.';
+      paintPane();
+    };
+    if (window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(run, function () { run(null); });
+    else run(null);
   }
 
   /* ---------- tab: music ---------- */
@@ -422,7 +477,9 @@
       { label: 'Затухание в конце', on: music.fade, fn: function () { music.fade = !music.fade; paintPane(); } },
       { label: 'Подогнать нарезку под бит', fn: beatSnap }
     ]));
+    p.appendChild(chipRow([{ label: 'Растянуть на всю песню', on: true, fn: fitToSong }]));
     if (music.status) p.appendChild(el('div', 'ed-hint', music.status));
+    p.appendChild(el('div', 'ed-hint', '«На всю песню» растягивает фото так, чтобы ролик шёл от старта до конца песни. Если фото мало, они пойдут по кругу, а склейки лягут на доли. «Под бит» только подравнивает нарезку, не меняя общую длину сильно.'));
     p.appendChild(el('div', 'ed-hint', '«Под бит» ставит старт песни на первую долю и подрезает клипы и фото до целого числа долей, чтобы склейки попадали в ритм.'));
   }
   function openPick() { $('#edPickQ').value = ''; renderPick(); $('#edPick').hidden = false; }
@@ -463,6 +520,10 @@
   function paneFmt(p) {
     p.appendChild(chipRow(Object.keys(RATIOS).map(function (k) { return { label: k + (k === '9:16' ? ' рилсы' : k === '1:1' ? ' квадрат' : ' широкий'), on: ratioKey === k, fn: function () { ratioKey = k; applySize(); paintPane(); } }; }), 'Формат'));
     p.appendChild(chipRow([540, 720, 1080].map(function (q) { return { label: q + 'p', on: quality === q, fn: function () { quality = q; applySize(); paintPane(); } }; }), 'Качество'));
+    p.appendChild(chipRow([
+      { label: 'Заполнить всем', fn: function () { clips.forEach(function (c) { c.fit = 'fill'; }); toast('Кадр: заполнить'); } },
+      { label: 'Вписать всем', fn: function () { clips.forEach(function (c) { c.fit = 'fit'; }); toast('Кадр: вписать, края не обрезаются'); } }
+    ], 'Кадр'));
     p.appendChild(el('div', 'ed-hint', 'Для рилсов подходит 9:16 и 720p: ролик получается лёгким и чётким. 1080p весит больше и на слабом телефоне может писаться рывками.'));
     p.appendChild(el('div', 'ed-hint', 'Проект живёт, пока приложение открыто. После перезапуска его придётся собрать заново, поэтому экспортируй готовое.'));
     p.appendChild(chipRow([{ label: 'Начать заново', fn: function () {
