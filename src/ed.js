@@ -316,6 +316,11 @@
     var b = beatPos(), fr = b - Math.floor(b), kick = Math.pow(1 - fr, 2.2), side = (Math.floor(b) % 2) ? 1 : -1;
     chars.forEach(function (c, ci) {
       if (!c.img || !c.img.width) return;
+      if (t < c.t0 || (c.t1 > 0 && t >= c.t1)) return;
+      var pop = 1, u = (t - c.t0) / 0.4;
+      if (u < 1) { var u1 = u - 1; pop = Math.max(0.01, 1 + 2.7 * u1 * u1 * u1 + 1.7 * u1 * u1); }
+      if (c.t1 > 0) pop *= Math.max(0, Math.min(1, (c.t1 - t) / 0.25));
+      if (pop <= 0.01) return;
       var bx = charBox(c), N = 28, amt = c.amt, ph = ci * 1.7;
       var rot = 0, sq = 1, hop = 0, wave = 0, wavePh = 0, jit = 0;
       if (c.anim === 'dance') { rot = side * 0.07 * amt * (0.4 + 0.6 * Math.sin(Math.PI * fr)); sq = 1 - 0.07 * amt * kick; wave = 0.05 * amt; wavePh = b * Math.PI + ph; }
@@ -324,7 +329,7 @@
       else if (c.anim === 'boil') { jit = 0.012 * amt; }
       var fi = Math.floor(t * 8);
       g.save();
-      g.translate(bx.cx, bx.cy + bx.h / 2 - hop); g.rotate(rot); g.scale(c.flip ? -1 : 1, sq);
+      g.translate(bx.cx, bx.cy + bx.h / 2 - hop); g.rotate(rot); g.scale((c.flip ? -1 : 1) * pop, sq * pop);
       if (c.shadow !== false) { g.save(); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
       var sh = c.img.height / N;
       for (var i = 0; i < N; i++) {
@@ -361,8 +366,8 @@
   cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 
   function mkChar(canvas, bid, m) {
-    var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false };
-    if (m) { c.x = m.x; c.y = m.y; c.size = m.size; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
+    var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false, t0: 0, t1: 0 };
+    if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.x = m.x; c.y = m.y; c.size = m.size; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
     return c;
   }
   function addChars(list) {
@@ -459,6 +464,14 @@
     p.appendChild(chipRow(ANIMS.map(function (a) { return { label: a[1], on: c.anim === a[0], fn: function () { c.anim = a[0]; saveProject(); paintPane(); } }; }), 'Движение'));
     p.appendChild(slider('Сила', 0.2, 2, 0.1, c.amt, function (v) { return f1(v) + '×'; }, function (v) { c.amt = v; saveProject(); }));
     p.appendChild(slider('Размер', 0.08, 0.9, 0.01, c.size, function (v) { return Math.round(v * 100) + '%'; }, function (v) { c.size = v; saveProject(); if (!playing) draw(); }));
+    var tmax = Math.max(1, Math.round(total * 10) / 10);
+    p.appendChild(slider('Появится', 0, tmax, 0.1, Math.min(c.t0, tmax), function (v) { return fmt(v); }, function (v) { c.t0 = v; if (c.t1 > 0 && c.t1 <= v) c.t1 = 0; saveProject(); if (!playing) draw(); }));
+    p.appendChild(slider('Исчезнет', 0, tmax, 0.1, Math.min(c.t1, tmax), function (v) { return v < 0.05 ? 'в конце' : fmt(v); }, function (v) { c.t1 = v < 0.05 ? 0 : Math.max(v, c.t0 + 0.5); saveProject(); if (!playing) draw(); }));
+    p.appendChild(chipRow([
+      { label: 'Появится сейчас', fn: function () { c.t0 = t; if (c.t1 > 0 && c.t1 <= t) c.t1 = 0; saveProject(); paintPane(); if (!playing) draw(); } },
+      { label: 'Исчезнет сейчас', fn: function () { c.t1 = Math.max(t, c.t0 + 0.5); saveProject(); paintPane(); if (!playing) draw(); } },
+      { label: 'Весь ролик', fn: function () { c.t0 = 0; c.t1 = 0; saveProject(); paintPane(); if (!playing) draw(); } }
+    ]));
     p.appendChild(chipRow([
       { label: 'Отразить', fn: function () { c.flip = !c.flip; saveProject(); if (!playing) draw(); } },
       { label: 'Удалить героя', fn: function () { chars.splice(selC, 1); selC = chars.length ? 0 : -1; saveProject(true); paintPane(); if (!playing) draw(); } }
@@ -851,7 +864,7 @@
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0]; }),
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.t0, c.t1]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -865,7 +878,7 @@
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
-      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip }; }),
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
     var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {

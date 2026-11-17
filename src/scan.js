@@ -221,6 +221,27 @@
         }
         var area = 0; for (ii = 0; ii < mw * mh; ii++) { M[ii] = out[ii] ? 0 : 1; area += M[ii]; }
         if (area < minArea) return;
+        /* смываем кусочки бумаги по краю: белое, что соединено с внешней стороной */
+        var pt2 = thr * 1.25, pt2s = pt2 * pt2, pq = new Uint8Array(mw * mh), pst = new Int32Array(mw * mh), psp = 0;
+        function paperLike(ix) {
+          var px2 = ix % mw, py2 = (ix - px2) / mw, u2 = (ex0 + px2) / bw, v2 = (ey0 + py2) / bh, gi3 = ((y0 + ey0 + py2) * cw + x0 + ex0 + px2) * 4, dd2 = 0;
+          for (var c3 = 0; c3 < 3; c3++) { var e3 = pl[c3][0] + pl[c3][1] * u2 + pl[c3][2] * v2, df3 = data[gi3 + c3] - e3; dd2 += df3 * df3; }
+          return dd2 < pt2s;
+        }
+        for (ii = 0; ii < mw * mh; ii++) {
+          if (!M[ii]) continue;
+          var ix2 = ii % mw, iy2 = (ii - ix2) / mw, edge = ix2 === 0 || iy2 === 0 || ix2 === mw - 1 || iy2 === mh - 1 || !M[ii - 1] || !M[ii + 1] || !M[ii - mw] || !M[ii + mw];
+          if (edge && paperLike(ii)) { pq[ii] = 1; pst[psp++] = ii; }
+        }
+        while (psp) {
+          var pi = pst[--psp]; M[pi] = 0;
+          var pxx = pi % mw, pyy = (pi - pxx) / mw, nbs = [pxx > 0 ? pi - 1 : -1, pxx < mw - 1 ? pi + 1 : -1, pyy > 0 ? pi - mw : -1, pyy < mh - 1 ? pi + mw : -1];
+          for (var nn = 0; nn < 4; nn++) { var nq = nbs[nn]; if (nq >= 0 && M[nq] && !pq[nq] && paperLike(nq)) { pq[nq] = 1; pst[psp++] = nq; } }
+        }
+        var l3 = label(M, mw, mh), big3 = 0, k3; for (k3 = 1; k3 <= l3.n; k3++) if (l3.areas[k3] > big3) big3 = l3.areas[k3];
+        for (ii = 0; ii < mw * mh; ii++) if (M[ii] && l3.areas[l3.lab[ii]] < 0.2 * big3) M[ii] = 0;
+        area = 0; for (ii = 0; ii < mw * mh; ii++) area += M[ii];
+        if (area < minArea) return;
         /* ровный край: чуть сглаживаем маску */
         var cvs = document.createElement('canvas'); cvs.width = mw; cvs.height = mh;
         var cg = cvs.getContext('2d'), im = cg.createImageData(mw, mh), dd = im.data;
