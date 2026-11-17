@@ -44,3 +44,5 @@ body.ed-open { overflow: hidden; }
 .sc-c.on { border-color: var(--accent); box-shadow: 0 0 10px var(--glow); }
 .sc-c canvas { max-width: 100%; max-height: 100%; display: block; }
 .sc-c i { position: absolute; right: 4px; top: 2px; font-style: normal; font-size: 11px; color: #fff; text-shadow: 0 1px 3px #000; }
+.sc-edit { display: grid; place-items: center; border-radius: 12px; padding: 6px; background: repeating-conic-gradient(#2a2d34 0 25%, #1f2227 0 50%) 0 0 / 16px 16px; max-height: 50vh; overflow: hidden; }
+.sc-edit canvas { max-width: 100%; max-height: 48vh; touch-action: none; display: block; }

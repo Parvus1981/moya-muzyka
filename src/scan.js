@@ -257,10 +257,14 @@
         cx0 = Math.max(0, cx0 - 3); cy0 = Math.max(0, cy0 - 3); cx1 = Math.min(mw - 1, cx1 + 3); cy1 = Math.min(mh - 1, cy1 + 3);
         var cc = document.createElement('canvas'); cc.width = cx1 - cx0 + 1; cc.height = cy1 - cy0 + 1;
         cc.getContext('2d').drawImage(cvs, cx0, cy0, cc.width, cc.height, 0, 0, cc.width, cc.height);
+        var fl = document.createElement('canvas'); fl.width = cc.width; fl.height = cc.height;
+        var fg = fl.getContext('2d'), fim = fg.createImageData(fl.width, fl.height), fd = fim.data, fx, fy;
+        for (fy = 0; fy < fl.height; fy++) for (fx = 0; fx < fl.width; fx++) { var fs = (((y0 + ey0 + cy0 + fy) * cw) + x0 + ex0 + cx0 + fx) * 4, fo = (fy * fl.width + fx) * 4; fd[fo] = data[fs]; fd[fo + 1] = data[fs + 1]; fd[fo + 2] = data[fs + 2]; fd[fo + 3] = 255; }
+        fg.putImageData(fim, 0, 0); var fullC = fl;
         cvs = cc; ex0 += cx0; ey0 += cy0; mw = cc.width; mh = cc.height;
         var aspect = mw / mh, relY = (ey0 + mh / 2) / bh;
         var kind = (aspect > 2.6 && relY < 0.4) || aspect > 4 ? 'text' : 'figure';
-        cands.push({ cv: cvs, kind: kind, sheet: si, w: mw, h: mh, area: area, x: x0 + ex0, y: y0 + ey0, sel: kind === 'figure' });
+        cands.push({ cv: cvs, full: fullC, kind: kind, sheet: si, w: mw, h: mh, area: area, x: x0 + ex0, y: y0 + ey0, sel: kind === 'figure' });
       });
       /* весь лист целиком как один «стикер» */
       var scv = document.createElement('canvas'); scv.width = bw; scv.height = bh;

@@ -51,6 +51,7 @@
     <div class="dj-pick-in" role="dialog" aria-label="Герои из рисунка">
       <div class="dj-pick-head"><strong>Герои из рисунка</strong><button class="ghost" id="edScanClose" type="button">Закрыть</button></div>
       <div class="hint2" id="edScanInfo"></div>
+      <div class="chips"><button class="chip" id="edScanPerson" type="button" hidden>🧍 Это фото человека — вырезать</button></div>
       <div class="sc-list" id="edScanList"></div>
       <div class="chips"><button class="chip on" id="edScanAdd" type="button" hidden>Добавить выбранных в ролик</button></div>
     </div>
@@ -61,6 +62,15 @@
       <video id="edCamV" playsinline muted autoplay style="width:100%;max-height:56vh;background:#000;border-radius:12px;object-fit:contain"></video>
       <div class="hint2" id="edCamInfo"></div>
       <div class="chips"><button class="chip on" id="edCamShot" type="button">● Снять</button><button class="chip" id="edCamFlip" type="button">Другая камера</button></div>
+    </div>
+  </div>
+  <div class="dj-pick" id="edBrush" hidden>
+    <div class="dj-pick-in" role="dialog" aria-label="Подчистить героя">
+      <div class="dj-pick-head"><strong>Подчистить героя</strong><button class="ghost" id="edBrushDone" type="button">Готово</button></div>
+      <div class="sc-edit" id="edBrushBox"></div>
+      <div class="chips" id="edBrushModes"></div>
+      <div id="edBrushCtl"></div>
+      <div class="hint2">Стереть — води пальцем по лишнему фону. Вернуть — закрась обратно то, что стёрлось зря. Палочка — одно касание убирает похожий по цвету фон.</div>
     </div>
   </div>
   <div class="dj-toast" id="edToast" hidden></div>

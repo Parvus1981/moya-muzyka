@@ -321,7 +321,7 @@
       var EN = 0.9, eIn = c.enter || 'pop', eOut = c.exit || 'fade';
       var bx = charBox(c);
       var u = (t - c.t0) / (eIn === 'pop' ? 0.4 : EN);
-      if (u < 1) {
+      if (u < 1 && c.t0 > 0.05) {
         if (eIn === 'pop') { var u1 = u - 1; pop = Math.max(0.01, 1 + 2.7 * u1 * u1 * u1 + 1.7 * u1 * u1); }
         else { var ee = 1 - Math.pow(1 - Math.max(0, u), 3), rem = 1 - ee;
           if (eIn === 'left') offX = -(bx.cx + bx.w) * rem; else if (eIn === 'right') offX = (W - bx.cx + bx.w) * rem; else offY = -(bx.cy + bx.h) * rem;
@@ -450,16 +450,36 @@
       c.size = Math.min(0.34, (1.6 / n) / asp * (W / H)); c.size = Math.max(0.12, c.size);
       c.x = n === 1 ? 0.5 : (k + 0.5) / n; c.y = 0.95 - c.size / 2 - 0.03; if (cd.kind === 'sheet') { c.size = 0.5; c.y = 0.5; c.x = 0.5; c.anim = 'sway'; }
       c.anim = cd.kind === 'sheet' ? 'sway' : 'dance';
-      c.blob = null; chars.push(c);
+      c.blob = null; c.full = cd.full || null; if (cd.kind === 'person') { c.size = n === 1 ? 0.5 : Math.min(0.45, c.size * 1.3); c.y = 0.95 - c.size / 2 - 0.03; } chars.push(c);
       cd.cv.toBlob(function (bl) { c.blob = bl; saveProject(true); }, 'image/png');
     });
     selC = chars.length - 1; tab = 'chars'; paintTabs(); paintPane(); if (!playing) draw();
     toast('Героев добавлено: ' + n + '. Двигай их пальцем по кадру');
   }
-  var scanRes = null;
+  var scanRes = null, scanImg = null;
   function openScan(how) {
     var i = $(how === 'cam' ? '#edScanCam' : '#edScanFile'); i.value = ''; i.click();
   }
+  function addCandBtn(c, front) {
+    var box = $('#edScanList'), b = el('button', 'sc-c' + (c.sel ? ' on' : '')); b.type = 'button';
+    var th = document.createElement('canvas'); th.width = c.cv.width; th.height = c.cv.height; th.getContext('2d').drawImage(c.cv, 0, 0); b.appendChild(th);
+    b.appendChild(el('i', '', c.kind === 'sheet' ? 'лист' : c.kind === 'text' ? 'надпись' : c.kind === 'person' ? '🧍' : '✓'));
+    b.addEventListener('click', function () { c.sel = !c.sel; b.classList.toggle('on', c.sel); });
+    if (front && box.firstChild) box.insertBefore(b, box.firstChild); else box.appendChild(b);
+  }
+  $('#edScanPerson').addEventListener('click', function () {
+    if (!scanImg || !window.Person) return; var info = $('#edScanInfo'), btn = this; btn.disabled = true;
+    info.textContent = 'Вырезаю человека… первый раз загружается модель (около 6 МБ), потом быстро и без интернета.';
+    window.Person.cut(scanImg).then(function (res) {
+      btn.disabled = false;
+      var cd = { cv: res.cv, full: res.full, kind: 'person', sel: true, sheet: 0, w: res.cv.width, h: res.cv.height };
+      if (!scanRes) scanRes = { cands: [] }; scanRes.cands.unshift(cd); addCandBtn(cd, true); $('#edScanAdd').hidden = false;
+      info.textContent = 'Человек вырезан. Края можно подчистить потом кнопкой «Подчистить» у героя.';
+    }, function (e) {
+      btn.disabled = false;
+      info.textContent = (e && e.message === 'nobody') ? 'Человека на фото не нашёл. Попробуй снять крупнее и при хорошем свете.' : 'Не получилось загрузить вырезку человека (нужен интернет в первый раз). Рисунки вырезаются и без неё.';
+    });
+  });
   function onScanPick() { var f = this.files && this.files[0]; if (f) scanFile(f); }
   function scanFile(f) {
     var box = $('#edScanList'), info = $('#edScanInfo'); box.textContent = ''; info.textContent = 'Ищу героев на рисунке…';
@@ -468,17 +488,11 @@
     im.onload = function () {
       setTimeout(function () {
         var r; try { r = window.Scan.find(im); } catch (e) { r = null; }
-        URL.revokeObjectURL(url);
-        if (!r || !r.cands.length) { info.textContent = 'Не нашёл героев. Сфотографируй рисунок на светлом листе при хорошем свете, чтобы лист был виден целиком.'; return; }
+        scanImg = im; $('#edScanPerson').hidden = false;
+        if (!r || !r.cands.length) { info.textContent = 'Рисунок не нашёл. Если это обычное фото человека, нажми «Вырезать человека». Для рисунка снимай на светлом листе при хорошем свете.'; scanRes = { cands: [] }; return; }
         scanRes = r;
         info.textContent = 'Нашёл героев: ' + r.cands.filter(function (c) { return c.kind === 'figure'; }).length + '. Нажми, чтобы снять или поставить галочку. «Лист» — весь лист как картинка.';
-        r.cands.forEach(function (c) {
-          var b = el('button', 'sc-c' + (c.sel ? ' on' : '')); b.type = 'button';
-          var th = document.createElement('canvas'); th.width = c.cv.width; th.height = c.cv.height; th.getContext('2d').drawImage(c.cv, 0, 0); b.appendChild(th);
-          b.appendChild(el('i', '', c.kind === 'sheet' ? 'лист' : c.kind === 'text' ? 'надпись' : '✓'));
-          b.addEventListener('click', function () { c.sel = !c.sel; b.classList.toggle('on', c.sel); });
-          box.appendChild(b);
-        });
+        r.cands.forEach(addCandBtn);
         $('#edScanAdd').hidden = false;
       }, 30);
     };
@@ -522,6 +536,58 @@
   });
   $('#edScanClose').addEventListener('click', function () { $('#edScan').hidden = true; });
 
+  /* ---------- подчистка героя: ластик, возврат, палочка ---------- */
+  var br = { c: null, mode: 'erase', size: 0.05, tol: 40, stack: [], last: null };
+  function brSnap() { var cc = br.c.cv; br.stack.push(cc.getContext('2d').getImageData(0, 0, cc.width, cc.height)); if (br.stack.length > 8) br.stack.shift(); }
+  function brPos(e) { var cc = br.c.cv, r = cc.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * cc.width, (e.clientY - r.top) / r.height * cc.height]; }
+  function brDab(x, y) {
+    var cc = br.c.cv, gx = cc.getContext('2d'), rad = Math.max(3, br.size * cc.width / 2);
+    if (br.mode === 'erase') { gx.save(); gx.globalCompositeOperation = 'destination-out'; gx.beginPath(); gx.arc(x, y, rad, 0, 7); gx.fill(); gx.restore(); }
+    else if (br.mode === 'restore' && br.c.full) { gx.save(); gx.beginPath(); gx.arc(x, y, rad, 0, 7); gx.clip(); gx.drawImage(br.c.full, 0, 0, cc.width, cc.height); gx.restore(); }
+  }
+  function brWand(x, y) {
+    var cc = br.c.cv, gx = cc.getContext('2d', { willReadFrequently: true }), w = cc.width, h = cc.height, im = gx.getImageData(0, 0, w, h), d = im.data;
+    var fu = br.c.full ? br.c.full.getContext('2d').getImageData(0, 0, w, h).data : d, xi = Math.round(x), yi = Math.round(y); if (xi < 0 || yi < 0 || xi >= w || yi >= h) return;
+    var p0 = (yi * w + xi) * 4, r0 = fu[p0], g0 = fu[p0 + 1], b0 = fu[p0 + 2], tol2 = br.tol * br.tol * 3, seen = new Uint8Array(w * h), st = [yi * w + xi]; seen[yi * w + xi] = 1;
+    while (st.length) {
+      var q = st.pop(), qx = q % w, qy = (q - qx) / w, o = q * 4, dr = fu[o] - r0, dg = fu[o + 1] - g0, db = fu[o + 2] - b0;
+      if (dr * dr + dg * dg + db * db > tol2) continue; d[o + 3] = 0;
+      if (qx > 0 && !seen[q - 1]) { seen[q - 1] = 1; st.push(q - 1); } if (qx < w - 1 && !seen[q + 1]) { seen[q + 1] = 1; st.push(q + 1); }
+      if (qy > 0 && !seen[q - w]) { seen[q - w] = 1; st.push(q - w); } if (qy < h - 1 && !seen[q + w]) { seen[q + w] = 1; st.push(q + w); }
+    }
+    gx.putImageData(im, 0, 0);
+  }
+  function brModes() {
+    var m = $('#edBrushModes'); m.textContent = '';
+    [['erase', 'Стереть'], ['restore', 'Вернуть'], ['wand', 'Палочка']].forEach(function (a) {
+      var b = el('button', 'chip' + (br.mode === a[0] ? ' on' : ''), a[1]); b.type = 'button';
+      b.addEventListener('click', function () { br.mode = a[0]; brModes(); }); m.appendChild(b);
+    });
+    var u = el('button', 'chip', '↶ Отмена'); u.type = 'button'; u.addEventListener('click', function () { var s2 = br.stack.pop(); if (s2) { br.c.cv.getContext('2d').putImageData(s2, 0, 0); if (!playing) draw(); } }); m.appendChild(u);
+    var ctl = $('#edBrushCtl'); ctl.textContent = '';
+    if (br.mode === 'wand') ctl.appendChild(slider('Допуск', 8, 90, 1, br.tol, function (v) { return String(Math.round(v)); }, function (v) { br.tol = v; }));
+    else ctl.appendChild(slider('Кисть', 0.01, 0.2, 0.005, br.size, function (v) { return Math.round(v * 100) + '%'; }, function (v) { br.size = v; }));
+    if (br.mode === 'restore' && !br.c.full) ctl.appendChild(el('div', 'ed-hint', 'Вернуть можно только в этой сессии: исходник не сохраняется после перезапуска.'));
+  }
+  function openBrush(c) {
+    br.c = c; br.stack = []; var box = $('#edBrushBox'); box.textContent = ''; box.appendChild(c.cv);
+    c.cv.style.cssText = 'max-width:100%;max-height:48vh;touch-action:none;display:block'; br.mode = 'erase'; brModes(); $('#edBrush').hidden = false;
+    var down = false;
+    c.cv.onpointerdown = function (e) { e.preventDefault(); brSnap(); down = true; try { c.cv.setPointerCapture(e.pointerId); } catch (er) {} var p = brPos(e); br.last = p; if (br.mode === 'wand') { brWand(p[0], p[1]); down = false; } else brDab(p[0], p[1]); if (!playing) draw(); };
+    c.cv.onpointermove = function (e) {
+      if (!down) return; var p = brPos(e), l = br.last || p, dist = Math.hypot(p[0] - l[0], p[1] - l[1]), step = Math.max(2, br.size * c.cv.width / 4), n = Math.max(1, Math.ceil(dist / step));
+      for (var i = 1; i <= n; i++) brDab(l[0] + (p[0] - l[0]) * i / n, l[1] + (p[1] - l[1]) * i / n); br.last = p; if (!playing) draw();
+    };
+    c.cv.onpointerup = c.cv.onpointercancel = function () { down = false; };
+  }
+  function closeBrush() {
+    var c = br.c; if (!c) { $('#edBrush').hidden = true; return; }
+    c.cv.onpointerdown = c.cv.onpointermove = c.cv.onpointerup = c.cv.onpointercancel = null; c.cv.style.cssText = '';
+    $('#edBrushBox').textContent = ''; $('#edBrush').hidden = true; br.c = null;
+    c.cv.toBlob(function (bl) { c.blob = bl; saveProject(true); }, 'image/png'); paintPane(); if (!playing) draw();
+  }
+  $('#edBrushDone').addEventListener('click', closeBrush);
+
   function paneChars(p) {
     p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openCam('scan'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
@@ -558,6 +624,7 @@
     p.appendChild(say);
     p.appendChild(chipRow([
       { label: 'Отразить', fn: function () { c.flip = !c.flip; saveProject(); if (!playing) draw(); } },
+      { label: '✂ Подчистить', fn: function () { openBrush(c); } },
       { label: 'Удалить героя', fn: function () { chars.splice(selC, 1); selC = chars.length ? 0 : -1; saveProject(true); paintPane(); if (!playing) draw(); } }
     ]));
     p.appendChild(el('div', 'ed-hint', 'Тащи героя пальцем прямо по кадру. Рот: нажми «Поставить рот» и коснись рта на рисунке героя. Ритм берётся из музыки ролика: выбери музыку на вкладке «Музыка».'));
