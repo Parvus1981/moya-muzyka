@@ -458,7 +458,8 @@
     toast('Героев добавлено: ' + n + '. Двигай их пальцем по кадру');
   }
   var scanRes = null, scanImg = null;
-  function openScan(how) {
+  function openScan(how, mode) {
+    scanMode = mode || 'draw';
     var i = $(how === 'cam' ? '#edScanCam' : '#edScanFile'); i.value = ''; i.click();
   }
   function addCandBtn(c, front) {
@@ -482,12 +483,14 @@
     });
   });
   function onScanPick() { var f = this.files && this.files[0]; if (f) scanFile(f); }
+  var scanMode = 'draw';
   function scanFile(f) {
     var box = $('#edScanList'), info = $('#edScanInfo'); box.textContent = ''; info.textContent = 'Ищу героев на рисунке…';
     $('#edScan').hidden = false; $('#edScanAdd').hidden = true;
     var url = URL.createObjectURL(f), im = new Image();
     im.onload = function () {
       setTimeout(function () {
+        if (scanMode === 'person') { scanImg = im; scanRes = { cands: [] }; $('#edScanPerson').hidden = false; info.textContent = 'Вырезаю человека…'; $('#edScanPerson').click(); return; }
         var r; try { r = window.Scan.find(im); } catch (e) { r = null; }
         scanImg = im; $('#edScanPerson').hidden = false;
         if (!r || !r.cands.length) { info.textContent = 'Рисунок не нашёл. Если это обычное фото человека, нажми «Вырезать человека». Для рисунка снимай на светлом листе при хорошем свете.'; scanRes = { cands: [] }; return; }
@@ -509,7 +512,7 @@
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: camFace }, width: { ideal: 1920 }, height: { ideal: 1920 } }, audio: false }).then(function (st) {
       if ($('#edCam').hidden) { st.getTracks().forEach(function (tr) { tr.stop(); }); return; }
       camStream = st; var v = $('#edCamV'); v.srcObject = st; v.play().catch(function () {});
-      info.textContent = camMode === 'vid' ? 'Встань так, чтобы тебя было видно целиком, и подвигайся: потанцуй, помаши рукой. Запись 5 секунд.' : camMode === 'scan' ? 'Положи рисунок на ровную поверхность при хорошем свете, чтобы лист был виден целиком.' : 'Снимок добавится в ролик как фото.';
+      info.textContent = camMode === 'person' ? 'Сними человека целиком, лучше на спокойном фоне при хорошем свете.' : camMode === 'vid' ? 'Встань так, чтобы тебя было видно целиком, и подвигайся: потанцуй, помаши рукой. Запись 5 секунд.' : camMode === 'scan' ? 'Положи рисунок на ровную поверхность при хорошем свете, чтобы лист был виден целиком.' : 'Снимок добавится в ролик как фото.';
     }, function (e) {
       info.textContent = (e && e.name === 'NotAllowedError') ? 'Нет доступа к камере. Разреши камеру для приложения в настройках телефона (Приложения → Моя музыка → Разрешения) и нажми «Другая камера».' : 'Не удалось включить камеру (' + (e && e.name || 'ошибка') + '). Можно снять в обычной камере и выбрать «Из галереи».';
     });
@@ -526,7 +529,7 @@
       if (!bl) { toast('Не получилось сохранить снимок'); return; }
       var f = new File([bl], 'camera-' + Date.now() + '.jpg', { type: 'image/jpeg' });
       closeCam();
-      if (mode === 'scan') scanFile(f); else { addFiles([f]); toast('Фото добавлено в ролик'); }
+      if (mode === 'scan' || mode === 'person') { scanMode = mode === 'person' ? 'person' : 'draw'; scanFile(f); } else { addFiles([f]); toast('Фото добавлено в ролик'); }
     }, 'image/jpeg', 0.92);
   });
   $('#edScanFile').addEventListener('change', onScanPick); $('#edScanCam').addEventListener('change', onScanPick);
@@ -640,7 +643,8 @@
   });
 
   function paneChars(p) {
-    p.appendChild(chipRow([{ label: '📷 Снять камерой', on: true, fn: function () { openCam('scan'); } }, { label: '🖼 Из галереи', fn: function () { openScan('gal'); } }]));
+    p.appendChild(chipRow([{ label: '📷 Рисунок: камера', on: true, fn: function () { openCam('scan'); } }, { label: '🖼 Рисунок: галерея', fn: function () { openScan('gal'); } }], 'Рисунок'));
+    p.appendChild(chipRow([{ label: '🧍 Человек из фото: камера', on: true, fn: function () { openCam('person'); } }, { label: '🧍 из галереи', fn: function () { openScan('gal', 'person'); } }], 'Человек'));
     p.appendChild(chipRow([{ label: '🎬 Герой из видео: записать', on: true, fn: function () { openCam('vid'); } }, { label: '📁 из файла', fn: function () { $('#edVidFile').click(); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
     var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
