@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '14.b7ee25';
+  var APP_VERSION = '15.414069';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3675,6 +3675,86 @@ body.ed-open { overflow: hidden; }
   function charBox(c) {
     var h = c.size * H, w = h * c.img.width / c.img.height; return { w: w, h: h, cx: c.x * W, cy: c.y * H };
   }
+
+  /* ---------- вживление героя в кадр: цвет и свет сцены, тени, мягкость, зерно ---------- */
+  var HASF = (function () { try { return 'filter' in CanvasRenderingContext2D.prototype; } catch (e) { return false; } })();
+  var lay = document.createElement('canvas'), lg = lay.getContext('2d'), tiny = document.createElement('canvas'), tg = tiny.getContext('2d', { willReadFrequently: true }), grainPat = null;
+  tiny.width = 12; tiny.height = 12;
+  var BLEND_DEF = { on: true, col: 0.5, shd: 0.6, soft: 0.5, grain: 0.4, light: 0.5 };
+  function cl01(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  /* средний цвет, яркость и сторона света в кадре вокруг героя (до того как герой нарисован) */
+  function sceneAt(c, cx, cy, bx) {
+    var k = Math.floor(t * 8), old = c._sc;
+    if (old && (playing || exporting) && old.k === k) return old;
+    var rx = Math.max(0, Math.round(cx - bx.w * 0.9)), ry = Math.max(0, Math.round(cy - bx.h * 0.45)), rw = Math.min(W - rx, Math.round(bx.w * 1.8)), rh = Math.min(H - ry, Math.round(bx.h * 0.9));
+    var def = old || { r: 128, g: 128, b: 128, L: 0.5, ld: 0, sat: 0.3, tr: 150, tg: 150, tb: 150, k: k };
+    if (rw < 4 || rh < 4) return def;
+    var d;
+    try { tg.clearRect(0, 0, 12, 12); tg.drawImage(cv, rx, ry, rw, rh, 0, 0, 12, 12); d = tg.getImageData(0, 0, 12, 12).data; } catch (e) { return def; }
+    var sr = 0, sg2 = 0, sb = 0, ll = 0, lr = 0, sat = 0, i, x, n = 144;
+    for (i = 0; i < n; i++) {
+      var r = d[i * 4], g2 = d[i * 4 + 1], b2 = d[i * 4 + 2], lu = 0.2126 * r + 0.7152 * g2 + 0.0722 * b2; sr += r; sg2 += g2; sb += b2; x = i % 12;
+      if (x < 6) ll += lu; else lr += lu; sat += (Math.max(r, g2, b2) - Math.min(r, g2, b2)) / (Math.max(r, g2, b2) + 8);
+    }
+    var R = sr / n, G2 = sg2 / n, B = sb / n, L = (0.2126 * R + 0.7152 * G2 + 0.0722 * B) / 255, ld = cl01((lr - ll) / (lr + ll + 12) * 2.5, -1, 1), kk = 150 / Math.max(L * 255, 25);
+    var cur = { r: R, g: G2, b: B, L: L, ld: ld, sat: sat / n, tr: Math.round(Math.min(255, R * kk)), tg: Math.round(Math.min(255, G2 * kk)), tb: Math.round(Math.min(255, B * kk)), k: k };
+    if (old) { var m = 0.45; cur.L = old.L + (cur.L - old.L) * m; cur.ld = old.ld + (cur.ld - old.ld) * m; cur.sat = old.sat + (cur.sat - old.sat) * m; cur.tr = Math.round(old.tr + (cur.tr - old.tr) * m); cur.tg = Math.round(old.tg + (cur.tg - old.tg) * m); cur.tb = Math.round(old.tb + (cur.tb - old.tb) * m); }
+    c._sc = cur; return cur;
+  }
+  /* яркость самого героя (по прозрачности), считается один раз на картинку */
+  function heroLum(c, im) {
+    if (c._hlFor === im && c._hl != null) return c._hl;
+    var v = 0.6;
+    try {
+      tg.clearRect(0, 0, 12, 12); tg.drawImage(im, 0, 0, 12, 12); var d = tg.getImageData(0, 0, 12, 12).data, s = 0, w = 0, i;
+      for (i = 0; i < 144; i++) { var a = d[i * 4 + 3] / 255; s += a * (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255; w += a; }
+      if (w > 1) v = s / w;
+    } catch (e) {}
+    c._hlFor = im; c._hl = Math.max(0.12, v); return c._hl;
+  }
+  function makeGrain() {
+    var nc = document.createElement('canvas'); nc.width = nc.height = 128; var ng = nc.getContext('2d'), id = ng.createImageData(128, 128), d = id.data, i;
+    for (i = 0; i < 128 * 128; i++) { var v = Math.random(); d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v > 0.5 ? 255 : 0; d[i * 4 + 3] = Math.round(Math.abs(v - 0.5) * 2 * 255 * 0.6); }
+    ng.putImageData(id, 0, 0); return lg.createPattern(nc, 'repeat');
+  }
+  /* тень под героем: мягкое пятно у ног + отброшенная тень в сторону от света */
+  function groundShadow(k, c, bl, sc, im, bx, hopK) {
+    var a = bl.shd * (0.22 + 0.45 * sc.L) * hopK;
+    k.save(); k.translate(0, 2); k.scale(1, 0.14);
+    var r = bx.w * 0.42, rg = k.createRadialGradient(0, 0, 0, 0, 0, r); rg.addColorStop(0, 'rgba(0,0,0,' + (1.5 * a).toFixed(3) + ')'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    k.fillStyle = rg; k.beginPath(); k.arc(0, 0, r, 0, 7); k.fill(); k.restore();
+    var sk = -0.35 * (1 - Math.min(1, Math.abs(sc.ld) * 4)) + sc.ld * 0.9; if (c.flip) sk = -sk;
+    k.save(); k.globalAlpha = Math.min(0.7, a); k.filter = 'brightness(0) blur(' + (bx.h * 0.012 * (0.6 + bl.soft)).toFixed(2) + 'px)';
+    k.transform(1, 0, sk, -0.2 * hopK, 0, 2); k.drawImage(im, -bx.w / 2, -bx.h, bx.w, bx.h); k.restore();
+  }
+  /* слой героя -> подгонка цвета, света, зерна -> на кадр */
+  function blendLayer(c, bl, sc, cx, cy, bx, im) {
+    var rx = Math.max(0, Math.floor(cx - bx.w * 0.95)), ry = Math.max(0, Math.floor(cy - bx.h * 0.7)), rx2 = Math.min(W, Math.ceil(cx + bx.w * 0.95)), ry2 = Math.min(H, Math.ceil(cy + bx.h * 0.7)), rw = rx2 - rx, rh = ry2 - ry;
+    if (rw < 2 || rh < 2) return;
+    lg.save(); lg.globalCompositeOperation = 'source-atop';
+    var Lt = bl.light;
+    if (Lt > 0.02) {
+      var a = Math.min(1, Math.abs(sc.ld) * 3) * Lt, gx = lg.createLinearGradient(cx - bx.w / 2, 0, cx + bx.w / 2, 0), dark = 'rgba(10,8,20,' + (0.3 * a).toFixed(3) + ')', lit = 'rgba(255,240,210,' + (0.16 * a).toFixed(3) + ')';
+      if (sc.ld > 0) { gx.addColorStop(0, dark); gx.addColorStop(1, lit); } else { gx.addColorStop(0, lit); gx.addColorStop(1, dark); }
+      lg.fillStyle = gx; lg.fillRect(rx, ry, rw, rh);
+      var gy = lg.createLinearGradient(0, cy - bx.h / 2, 0, cy + bx.h / 2); gy.addColorStop(0, 'rgba(255,245,220,' + (0.05 * Lt).toFixed(3) + ')'); gy.addColorStop(0.55, 'rgba(0,0,0,0)'); gy.addColorStop(1, 'rgba(8,6,16,' + (0.28 * Lt).toFixed(3) + ')');
+      lg.fillStyle = gy; lg.fillRect(rx, ry, rw, rh);
+    }
+    if (bl.col > 0.02) { lg.fillStyle = 'rgba(' + sc.tr + ',' + sc.tg + ',' + sc.tb + ',' + (0.16 * bl.col).toFixed(3) + ')'; lg.fillRect(rx, ry, rw, rh); }
+    if (bl.grain > 0.02) {
+      if (!grainPat) grainPat = makeGrain();
+      var ox = Math.floor(Math.random() * 128), oy = Math.floor(Math.random() * 128);
+      lg.globalAlpha = 0.5 * bl.grain; lg.translate(ox, oy); lg.fillStyle = grainPat; lg.fillRect(rx - ox, ry - oy, rw, rh);
+    }
+    lg.restore();
+    var f = [];
+    if (bl.col > 0.02) {
+      var kk = cl01((sc.L + 0.08) / heroLum(c, im), 0.6, 1.1);
+      f.push('brightness(' + (1 + (kk - 1) * bl.col).toFixed(3) + ')'); f.push('saturate(' + (1 - 0.12 * bl.col).toFixed(3) + ')');
+    }
+    if (bl.soft > 0.04) f.push('blur(' + (bl.soft * Math.max(0.5, bx.h / 500)).toFixed(2) + 'px)');
+    g.save(); if (f.length) g.filter = f.join(' '); g.drawImage(lay, rx, ry, rw, rh, rx, ry, rw, rh); g.restore();
+  }
   function drawChars() {
     if (!chars.length) return;
     ensureGrid();
@@ -3710,39 +3790,58 @@ body.ed-open { overflow: hidden; }
         if (ci2 > 0 && age >= 0 && age < 0.7) { var kk = Math.exp(-age * 6); hop += kk * 0.08 * H; sq *= 1 - 0.1 * kk * (age < 0.1 ? 1 : 0.5); rot += Math.sin(age * 18) * 0.06 * kk; }
       }
       var fi = Math.floor(t * 8);
-      g.save();
-      g.translate(bx.cx + offX, bx.cy + offY + bx.h / 2 - hop); g.rotate(rot); g.scale((c.flip ? -1 : 1) * pop, sq * pop);
-      if (c.shadow !== false) { g.save(); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
+      var bl = c.blend && c.blend.on && HASF ? c.blend : null;
       var im = c.frames ? c.frames[Math.floor(Math.max(0, t - c.t0) * c.fps) % c.frames.length] : c.img; if (!im || !im.width) im = c.img;
-      var sh = im.height / N;
-      for (var i = 0; i < N; i++) {
-        var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
-        if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
-        var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
-        g.drawImage(im, 0, i * sh, im.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
+      var hcx = bx.cx + offX, hcy = bx.cy + offY - hop, hopK = Math.max(0.3, 1 - hop / H * 2);
+      var sc = bl ? sceneAt(c, hcx, hcy, bx) : null;
+      var xf = function (k) { k.translate(bx.cx + offX, bx.cy + offY + bx.h / 2 - hop); k.rotate(rot); k.scale((c.flip ? -1 : 1) * pop, sq * pop); };
+      if (c.fx === 'aura') {
+        var pul = 0.55 + 0.45 * kick, ar = bx.h * 0.62 * (1 + 0.08 * kick), hue = Math.round((b * 25 + ci * 70) % 360), rgA = g.createRadialGradient(hcx, hcy, bx.h * 0.05, hcx, hcy, ar);
+        rgA.addColorStop(0, 'hsla(' + hue + ',95%,62%,' + (0.5 * pul).toFixed(3) + ')'); rgA.addColorStop(1, 'hsla(' + hue + ',95%,62%,0)');
+        g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = rgA; g.fillRect(hcx - ar, hcy - ar, ar * 2, ar * 2); g.restore();
       }
-      var m = c.mouth;
-      if (m && m.on) {
-        var hm = 1 - m.y, mdx = Math.sin(wavePh - hm * 3.2) * wave * bx.w * hm, mxp = (m.x - 0.5) * bx.w * (1) + mdx, myp = -bx.h * (1 - m.y), mrx = Math.max(3, m.s * bx.w / 2);
-        var sy = Math.sin(b * Math.PI * 2 + ci * 2), op = Math.max(0, sy) * (hash(Math.floor(b * 2) + ci * 5) > 0.3 ? 1 : 0.25);
-        var mry = mrx * (0.18 + 0.82 * op);
-        g.save(); g.translate(mxp, myp);
-        g.fillStyle = '#3b0a12'; g.strokeStyle = '#1a1a1a'; g.lineWidth = Math.max(1.5, mrx * 0.22);
-        g.beginPath(); g.ellipse(0, 0, mrx, mry, 0, 0, 7); g.fill(); g.stroke();
-        if (op > 0.45) { g.fillStyle = '#ff6b81'; g.beginPath(); g.ellipse(0, mry * 0.45, mrx * 0.55, mry * 0.5, 0, 0, Math.PI); g.fill(); }
-        g.restore();
-      }
-      g.restore();
+      if (bl && bl.shd > 0.02 && sc) { g.save(); xf(g); groundShadow(g, c, bl, sc, im, bx, hopK); g.restore(); }
+      else if (c.shadow !== false) { g.save(); xf(g); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
+      var paintHero = function (G) {
+        var sh = im.height / N;
+        for (var i = 0; i < N; i++) {
+          var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
+          if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
+          var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
+          G.drawImage(im, 0, i * sh, im.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
+        }
+        var m = c.mouth;
+        if (m && m.on) {
+          var hm = 1 - m.y, mdx = Math.sin(wavePh - hm * 3.2) * wave * bx.w * hm, mxp = (m.x - 0.5) * bx.w * (1) + mdx, myp = -bx.h * (1 - m.y), mrx = Math.max(3, m.s * bx.w / 2);
+          var sy = Math.sin(b * Math.PI * 2 + ci * 2), op = Math.max(0, sy) * (hash(Math.floor(b * 2) + ci * 5) > 0.3 ? 1 : 0.25);
+          var mry = mrx * (0.18 + 0.82 * op);
+          G.save(); G.translate(mxp, myp);
+          G.fillStyle = '#3b0a12'; G.strokeStyle = '#1a1a1a'; G.lineWidth = Math.max(1.5, mrx * 0.22);
+          G.beginPath(); G.ellipse(0, 0, mrx, mry, 0, 0, 7); G.fill(); G.stroke();
+          if (op > 0.45) { G.fillStyle = '#ff6b81'; G.beginPath(); G.ellipse(0, mry * 0.45, mrx * 0.55, mry * 0.5, 0, 0, Math.PI); G.fill(); }
+          G.restore();
+        }
+      };
+      if (bl && sc) {
+        if (lay.width !== W || lay.height !== H) { lay.width = W; lay.height = H; } else lg.clearRect(0, 0, W, H);
+        lg.save(); xf(lg); paintHero(lg); lg.restore();
+        blendLayer(c, bl, sc, hcx, hcy, bx, im);
+      } else { g.save(); xf(g); paintHero(g); g.restore(); }
       /* эффекты вокруг героя */
-      if (c.fx && c.fx !== 'none') {
-        var kb = Math.floor(b), every = c.fx === 'confetti' ? 1 : 2, headY = bx.cy + offY - bx.h * 0.38 - hop, hx = bx.cx + offX;
+      if (c.fx && c.fx !== 'none' && c.fx !== 'aura') {
+        var kb = Math.floor(b), every = (c.fx === 'confetti' || c.fx === 'sparkle') ? 1 : 2, headY = bx.cy + offY - bx.h * 0.38 - hop, hx = bx.cx + offX;
         for (var kq = kb - 2; kq <= kb; kq++) {
           if (kq % every !== 0) continue; var age = b - kq; if (age < 0 || age > 2) continue;
           for (var j = 0; j < 7; j++) {
             var sd = hash(kq * 13 + j * 7.3 + ci * 3.1), sd2 = hash(kq * 5 + j * 11.7 + ci), ang = -Math.PI / 2 + (sd - 0.5) * 2.6, spd = (0.5 + sd2) * bx.h * 0.55;
             var px = hx + Math.cos(ang) * spd * age, py = headY + Math.sin(ang) * spd * age + 0.35 * bx.h * age * age, al = Math.max(0, 1 - age / 2), sz = bx.h * (0.05 + sd2 * 0.04);
+            if (c.fx === 'notes' || c.fx === 'bubbles') { px = hx + (sd - 0.5) * bx.w * 1.1 + Math.sin(age * 5 + j) * bx.w * 0.05; py = headY - age * bx.h * 0.4 - sd2 * bx.h * 0.1; }
+            else if (c.fx === 'sparkle') { px = hx + (sd - 0.5) * bx.w * 1.0; py = bx.cy + offY - hop - bx.h * 0.45 + sd2 * bx.h * 0.9; al = Math.max(0, Math.sin(Math.min(1, age / 1.2) * Math.PI)); }
             g.save(); g.globalAlpha = al; g.translate(px, py);
             if (c.fx === 'hearts') { g.fillStyle = sd > 0.5 ? '#ff4d6d' : '#ff85a1'; g.font = '700 ' + Math.round(sz * 1.6) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('\u2665', 0, 0); }
+            else if (c.fx === 'notes') { g.fillStyle = ['#ffffff', '#ffd23f', '#7dd3ff', '#ff85a1'][j % 4]; g.font = '700 ' + Math.round(sz * 1.9) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(sd > 0.5 ? '\u266A' : '\u266B', 0, 0); }
+            else if (c.fx === 'bubbles') { var br = sz * (0.5 + sd2 * 0.6); g.fillStyle = 'rgba(255,255,255,0.12)'; g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = Math.max(1.5, br * 0.12); g.beginPath(); g.arc(0, 0, br, 0, 7); g.fill(); g.stroke(); g.beginPath(); g.arc(-br * 0.35, -br * 0.35, br * 0.18, 0, 7); g.fillStyle = 'rgba(255,255,255,0.9)'; g.fill(); }
+            else if (c.fx === 'sparkle') { var sr2 = sz * (0.7 + al * 0.8); g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(255,240,170,0.25)'; g.beginPath(); g.arc(0, 0, sr2 * 0.9, 0, 7); g.fill(); g.fillStyle = '#fff6c4'; g.beginPath(); for (var q = 0; q < 8; q++) { var ra = q % 2 ? sr2 * 0.22 : sr2, an = q * Math.PI / 4 - Math.PI / 2; g.lineTo(Math.cos(an) * ra, Math.sin(an) * ra); } g.closePath(); g.fill(); }
             else if (c.fx === 'stars') { g.fillStyle = sd > 0.5 ? '#ffd23f' : '#fff4a3'; g.font = '700 ' + Math.round(sz * 1.7) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('\u2605', 0, 0); }
             else { g.rotate(age * 6 + sd * 6); g.fillStyle = ['#ff4d6d', '#ffd23f', '#4dd2ff', '#7dff6b', '#c77dff'][j % 5]; g.fillRect(-sz / 3, -sz / 6, sz * 0.66, sz * 0.33); }
             g.restore();
@@ -3804,7 +3903,8 @@ body.ed-open { overflow: hidden; }
   cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 
   function mkChar(canvas, bid, m) {
-    var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false, t0: 0, t1: 0, enter: 'pop', exit: 'fade', react: false, fx: 'none', say: '', sayS: 1, mouth: { on: false, x: 0.5, y: 0.16, s: 0.12 } };
+    var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false, t0: 0, t1: 0, enter: 'pop', exit: 'fade', react: false, fx: 'none', say: '', sayS: 1, mouth: { on: false, x: 0.5, y: 0.16, s: 0.12 }, blend: Object.assign({}, BLEND_DEF) };
+    if (m && m.blend) c.blend = Object.assign(c.blend, m.blend);
     if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.enter = m.enter || 'pop'; c.exit = m.exit || 'fade'; c.react = !!m.react; c.fx = m.fx || 'none'; c.say = m.say || ''; c.sayS = m.sayS || 1; if (m.mouth) c.mouth = m.mouth; c.x = m.x; c.y = m.y; c.size = m.size; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
     return c;
   }
@@ -3980,7 +4080,7 @@ body.ed-open { overflow: hidden; }
       var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
       var out = frames.map(function (f) { var cc = document.createElement('canvas'); cc.width = cw; cc.height = ch; cc.getContext('2d').drawImage(f, x0, y0, cw, ch, 0, 0, cw, ch); return cc; });
       var c = mkChar(out[0], 'chv' + Date.now().toString(36) + (uid++));
-      c.frames = out; c.fps = 12; c.img = out[0]; c.anim = 'none'; c.size = 0.5; c.x = 0.5; c.y = 0.95 - c.size / 2 - 0.03; c.fb = [];
+      c.frames = out; c.fps = 12; c.img = out[0]; c.blend = { on: true, col: 0.3, shd: 0.5, soft: 0.25, grain: 0.35, light: 0.35 }; c.anim = 'none'; c.size = 0.5; c.x = 0.5; c.y = 0.95 - c.size / 2 - 0.03; c.fb = [];
       chars.push(c); selC = chars.length - 1; tab = 'chars';
       out.reduce(function (pr, cc, k) { return pr.then(function () { return new Promise(function (ok) { cc.toBlob(function (bl) { c.fb[k] = bl; ok(); }, 'image/png'); }); }); }, Promise.resolve()).then(function () { saveProject(true); });
       $('#edProc').hidden = true; paintTabs(); paintPane(); if (!playing) draw(); toast('Герой готов. Двигай и увеличивай его, он двигается как в видео');
@@ -4034,7 +4134,22 @@ body.ed-open { overflow: hidden; }
     p.appendChild(chipRow([['pop', 'Выскочит'], ['left', 'Слева'], ['right', 'Справа'], ['top', 'Сверху']].map(function (a) { return { label: a[1], on: (c.enter || 'pop') === a[0], fn: function () { c.enter = a[0]; saveProject(); paintPane(); if (!playing) draw(); } }; }), 'Вход'));
     p.appendChild(chipRow([['fade', 'Исчезнет'], ['left', 'Уйдёт влево'], ['right', 'Уйдёт вправо'], ['down', 'Уйдёт вниз']].map(function (a) { return { label: a[1], on: (c.exit || 'fade') === a[0], fn: function () { c.exit = a[0]; saveProject(); paintPane(); if (!playing) draw(); } }; }), 'Уход'));
     p.appendChild(chipRow([{ label: 'Прыгает на каждое новое фото', on: !!c.react, fn: function () { c.react = !c.react; saveProject(); paintPane(); } }], 'Реакция'));
-    p.appendChild(chipRow([['none', 'Нет'], ['hearts', 'Сердечки'], ['stars', 'Звёздочки'], ['confetti', 'Конфетти']].map(function (a) { return { label: a[1], on: (c.fx || 'none') === a[0], fn: function () { c.fx = a[0]; saveProject(); paintPane(); } }; }), 'Эффект'));
+    p.appendChild(chipRow([['none', 'Нет'], ['hearts', 'Сердечки'], ['stars', 'Звёздочки'], ['confetti', 'Конфетти'], ['notes', 'Ноты'], ['bubbles', 'Пузыри'], ['sparkle', 'Блёстки'], ['aura', 'Аура']].map(function (a) { return { label: a[1], on: (c.fx || 'none') === a[0], fn: function () { c.fx = a[0]; saveProject(); paintPane(); } }; }), 'Эффект'));
+    var bl = c.blend, blSet = function (o) { Object.keys(o).forEach(function (k) { bl[k] = o[k]; }); bl.on = true; saveProject(); paintPane(); if (!playing) draw(); };
+    p.appendChild(chipRow([
+      { label: bl.on ? 'Вжиться в кадр: вкл' : 'Вжиться в кадр: выкл', on: bl.on, fn: function () { bl.on = !bl.on; saveProject(); paintPane(); if (!playing) draw(); } },
+      { label: 'Естественно', fn: function () { blSet({ col: 0.5, shd: 0.6, soft: 0.5, grain: 0.4, light: 0.5 }); } },
+      { label: 'Сильнее', fn: function () { blSet({ col: 0.8, shd: 0.85, soft: 0.8, grain: 0.7, light: 0.75 }); } }
+    ], 'Вжиться'));
+    if (!HASF) p.appendChild(el('div', 'ed-hint', 'В этом браузере не работают фильтры холста, поэтому вживление недоступно.'));
+    else if (bl.on) {
+      var pct = function (v) { return Math.round(v * 100) + '%'; };
+      p.appendChild(slider('Цвет и свет кадра', 0, 1, 0.05, bl.col, pct, function (v) { bl.col = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(slider('Тень на земле', 0, 1, 0.05, bl.shd, pct, function (v) { bl.shd = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(slider('Объём от света', 0, 1, 0.05, bl.light, pct, function (v) { bl.light = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(slider('Мягкость краёв', 0, 1, 0.05, bl.soft, pct, function (v) { bl.soft = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(slider('Зерно как в видео', 0, 1, 0.05, bl.grain, pct, function (v) { bl.grain = v; saveProject(); if (!playing) draw(); }));
+    }
     p.appendChild(chipRow([
       { label: c.mouth.on ? 'Поющий рот: вкл' : 'Поющий рот: выкл', on: c.mouth.on, fn: function () { c.mouth.on = !c.mouth.on; if (c.mouth.on) placing = true; else placing = false; saveProject(); paintPane(); if (!playing) draw(); } },
       { label: placing ? 'Нажми на рот героя…' : 'Поставить рот', on: placing, fn: function () { placing = !placing; if (placing) { c.mouth.on = true; pause(); } paintPane(); } }
@@ -4436,7 +4551,7 @@ body.ed-open { overflow: hidden; }
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -4450,7 +4565,7 @@ body.ed-open { overflow: hidden; }
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
-      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
     var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
