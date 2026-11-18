@@ -18,6 +18,46 @@
   }
   function smooth(a, b, x) { var t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
 
+
+  /* размытие рамкой (быстрое, по строкам и столбцам) */
+  function boxBlur(a, w, h, r) {
+    var N = w * h, t = new Float32Array(N), o = new Float32Array(N), n = 2 * r + 1, x, y, s, k, row;
+    for (y = 0; y < h; y++) {
+      row = y * w; s = 0; for (k = -r; k <= r; k++) s += a[row + Math.min(w - 1, Math.max(0, k))];
+      for (x = 0; x < w; x++) { t[row + x] = s / n; s += a[row + Math.min(w - 1, x + r + 1)] - a[row + Math.max(0, x - r)]; }
+    }
+    for (x = 0; x < w; x++) {
+      s = 0; for (k = -r; k <= r; k++) s += t[Math.min(h - 1, Math.max(0, k)) * w + x];
+      for (y = 0; y < h; y++) { o[y * w + x] = s / n; s += t[Math.min(h - 1, y + r + 1) * w + x] - t[Math.max(0, y - r) * w + x]; }
+    }
+    return o;
+  }
+  /* оставляет самый большой кусок (и куски не меньше четверти от него): мусор вокруг героя убирается */
+  function keepMain(al, w, h) {
+    var N = w * h, lab = new Int32Array(N), stack = new Int32Array(N), sizes = [0], id = 0, i, sp, big = 0;
+    for (i = 0; i < N; i++) {
+      if (lab[i] || al[i] <= 0.5) continue;
+      id++; var cnt = 0; sp = 0; stack[sp++] = i; lab[i] = id;
+      while (sp) {
+        var q = stack[--sp], x = q % w; cnt++;
+        if (x > 0 && !lab[q - 1] && al[q - 1] > 0.5) { lab[q - 1] = id; stack[sp++] = q - 1; }
+        if (x < w - 1 && !lab[q + 1] && al[q + 1] > 0.5) { lab[q + 1] = id; stack[sp++] = q + 1; }
+        if (q >= w && !lab[q - w] && al[q - w] > 0.5) { lab[q - w] = id; stack[sp++] = q - w; }
+        if (q < N - w && !lab[q + w] && al[q + w] > 0.5) { lab[q + w] = id; stack[sp++] = q + w; }
+      }
+      sizes[id] = cnt; if (cnt > big) big = cnt;
+    }
+    if (!id) return null;
+    var keep = new Float32Array(N); for (i = 0; i < N; i++) { var L = lab[i]; if (L && sizes[L] >= big * 0.25) keep[i] = 1; }
+    return keep;
+  }
+  /* убрать мусор, чуть подрезать край (там остаётся цвет старого фона) и смягчить его */
+  function refine(al, w, h) {
+    var i, N = w * h, mn = Math.min(w, h), keep = keepMain(al, w, h);
+    if (keep) { var near = boxBlur(keep, w, h, Math.max(3, Math.round(mn * 0.012))); for (i = 0; i < N; i++) if (near[i] < 0.02) al[i] = 0; }
+    var b = boxBlur(al, w, h, Math.max(1, Math.round(mn * 0.003)));
+    for (i = 0; i < N; i++) al[i] = smooth(0.45, 0.88, b[i]);
+  }
   /* img -> Promise<canvas с прозрачным фоном, обрезан по человеку> */
   function cut(img) {
     return init().then(function (s) {
@@ -32,8 +72,11 @@
             mg.drawImage(r.segmentationMask, 0, 0, w, h);
             var md = mg.getImageData(0, 0, w, h).data, id = sg.getImageData(0, 0, w, h), d = id.data, N = w * h, i, x0 = w, y0 = h, x1 = 0, y1 = 0, cnt = 0;
             /* маска лежит в красном канале (0..255) */
+            var al0 = new Float32Array(N);
+            for (i = 0; i < N; i++) al0[i] = smooth(0.4, 0.62, md[i * 4] / 255);
+            refine(al0, w, h);
             for (i = 0; i < N; i++) {
-              var a = smooth(0.4, 0.62, md[i * 4] / 255); d[i * 4 + 3] = Math.round(a * 255);
+              var a = al0[i]; d[i * 4 + 3] = Math.round(a * 255);
               if (a > 0.5) { var x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; cnt++; }
             }
             if (cnt < N * 0.01) { bad(new Error('nobody')); return; }
