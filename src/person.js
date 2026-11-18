@@ -51,10 +51,30 @@
     var keep = new Float32Array(N); for (i = 0; i < N; i++) { var L = lab[i]; if (L && sizes[L] >= big * 0.25) keep[i] = 1; }
     return keep;
   }
+  /* дыры внутри героя (полупрозрачные места тела) становятся плотными; большие просветы (между рукой и телом) не трогаем */
+  function fillHoles(al, w, h) {
+    var N = w * h, lab = new Int32Array(N), stack = new Int32Array(N), id = 0, i, person = 0, sizes = [0], touch = [false];
+    for (i = 0; i < N; i++) if (al[i] > 0.5) person++;
+    for (i = 0; i < N; i++) {
+      if (lab[i] || al[i] > 0.5) continue;
+      id++; var cnt = 0, sp = 0, tb = false; stack[sp++] = i; lab[i] = id;
+      while (sp) {
+        var q = stack[--sp], x = q % w, y = (q - x) / w; cnt++;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) tb = true;
+        if (x > 0 && !lab[q - 1] && al[q - 1] <= 0.5) { lab[q - 1] = id; stack[sp++] = q - 1; }
+        if (x < w - 1 && !lab[q + 1] && al[q + 1] <= 0.5) { lab[q + 1] = id; stack[sp++] = q + 1; }
+        if (y > 0 && !lab[q - w] && al[q - w] <= 0.5) { lab[q - w] = id; stack[sp++] = q - w; }
+        if (y < h - 1 && !lab[q + w] && al[q + w] <= 0.5) { lab[q + w] = id; stack[sp++] = q + w; }
+      }
+      sizes[id] = cnt; touch[id] = tb;
+    }
+    for (i = 0; i < N; i++) { var L = lab[i]; if (L && !touch[L] && sizes[L] < person * 0.08) al[i] = 1; }
+  }
   /* убрать мусор, чуть подрезать край (там остаётся цвет старого фона) и смягчить его */
   function refine(al, w, h) {
     var i, N = w * h, mn = Math.min(w, h), keep = keepMain(al, w, h);
     if (keep) { var near = boxBlur(keep, w, h, Math.max(3, Math.round(mn * 0.012))); for (i = 0; i < N; i++) if (near[i] < 0.02) al[i] = 0; }
+    fillHoles(al, w, h);
     var b = boxBlur(al, w, h, Math.max(1, Math.round(mn * 0.003)));
     for (i = 0; i < N; i++) al[i] = smooth(0.45, 0.88, b[i]);
   }
@@ -73,7 +93,7 @@
             var md = mg.getImageData(0, 0, w, h).data, id = sg.getImageData(0, 0, w, h), d = id.data, N = w * h, i, x0 = w, y0 = h, x1 = 0, y1 = 0, cnt = 0;
             /* маска лежит в красном канале (0..255) */
             var al0 = new Float32Array(N);
-            for (i = 0; i < N; i++) al0[i] = smooth(0.4, 0.62, md[i * 4] / 255);
+            for (i = 0; i < N; i++) al0[i] = smooth(0.25, 0.5, md[i * 4] / 255);
             refine(al0, w, h);
             for (i = 0; i < N; i++) {
               var a = al0[i]; d[i * 4 + 3] = Math.round(a * 255);

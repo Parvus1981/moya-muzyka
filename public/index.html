@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '16.3bb381';
+  var APP_VERSION = '17.090ecc';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -2990,7 +2990,18 @@ body.ed-open { overflow: hidden; }
       return { bpm: r.bpm, off: r.off };
     }).catch(function () { return null; });
   }
-  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack };
+  /* ритм звука из любого файла (например звук видео-клипа в монтаже); key нужен, чтобы запомнить результат */
+  function analyzeBlob(key, blob) {
+    var gg = grid[key]; if (gg && gg.bpm) return Promise.resolve({ bpm: gg.bpm, off: gg.off || 0 });
+    if (!blob || blob.size > 150e6) return Promise.resolve(null);
+    return decode(blob).then(function (buf) {
+      var r = analyze(buf);
+      if (!r.bpm) return null;
+      grid[key] = { bpm: r.bpm, off: r.off }; saveGrid();
+      return { bpm: r.bpm, off: r.off };
+    }).catch(function () { return null; });
+  }
+  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob };
 })();
 
 </script>
@@ -3332,10 +3343,30 @@ body.ed-open { overflow: hidden; }
     var keep = new Float32Array(N); for (i = 0; i < N; i++) { var L = lab[i]; if (L && sizes[L] >= big * 0.25) keep[i] = 1; }
     return keep;
   }
+  /* дыры внутри героя (полупрозрачные места тела) становятся плотными; большие просветы (между рукой и телом) не трогаем */
+  function fillHoles(al, w, h) {
+    var N = w * h, lab = new Int32Array(N), stack = new Int32Array(N), id = 0, i, person = 0, sizes = [0], touch = [false];
+    for (i = 0; i < N; i++) if (al[i] > 0.5) person++;
+    for (i = 0; i < N; i++) {
+      if (lab[i] || al[i] > 0.5) continue;
+      id++; var cnt = 0, sp = 0, tb = false; stack[sp++] = i; lab[i] = id;
+      while (sp) {
+        var q = stack[--sp], x = q % w, y = (q - x) / w; cnt++;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) tb = true;
+        if (x > 0 && !lab[q - 1] && al[q - 1] <= 0.5) { lab[q - 1] = id; stack[sp++] = q - 1; }
+        if (x < w - 1 && !lab[q + 1] && al[q + 1] <= 0.5) { lab[q + 1] = id; stack[sp++] = q + 1; }
+        if (y > 0 && !lab[q - w] && al[q - w] <= 0.5) { lab[q - w] = id; stack[sp++] = q - w; }
+        if (y < h - 1 && !lab[q + w] && al[q + w] <= 0.5) { lab[q + w] = id; stack[sp++] = q + w; }
+      }
+      sizes[id] = cnt; touch[id] = tb;
+    }
+    for (i = 0; i < N; i++) { var L = lab[i]; if (L && !touch[L] && sizes[L] < person * 0.08) al[i] = 1; }
+  }
   /* убрать мусор, чуть подрезать край (там остаётся цвет старого фона) и смягчить его */
   function refine(al, w, h) {
     var i, N = w * h, mn = Math.min(w, h), keep = keepMain(al, w, h);
     if (keep) { var near = boxBlur(keep, w, h, Math.max(3, Math.round(mn * 0.012))); for (i = 0; i < N; i++) if (near[i] < 0.02) al[i] = 0; }
+    fillHoles(al, w, h);
     var b = boxBlur(al, w, h, Math.max(1, Math.round(mn * 0.003)));
     for (i = 0; i < N; i++) al[i] = smooth(0.45, 0.88, b[i]);
   }
@@ -3354,7 +3385,7 @@ body.ed-open { overflow: hidden; }
             var md = mg.getImageData(0, 0, w, h).data, id = sg.getImageData(0, 0, w, h), d = id.data, N = w * h, i, x0 = w, y0 = h, x1 = 0, y1 = 0, cnt = 0;
             /* маска лежит в красном канале (0..255) */
             var al0 = new Float32Array(N);
-            for (i = 0; i < N; i++) al0[i] = smooth(0.4, 0.62, md[i * 4] / 255);
+            for (i = 0; i < N; i++) al0[i] = smooth(0.25, 0.5, md[i * 4] / 255);
             refine(al0, w, h);
             for (i = 0; i < N; i++) {
               var a = al0[i]; d[i * 4 + 3] = Math.round(a * 255);
@@ -3702,15 +3733,38 @@ body.ed-open { overflow: hidden; }
   }
 
   /* ---------- герои из рисунка ---------- */
-  var ANIMS = [['dance', 'Танец'], ['hop', 'Прыжки'], ['sway', 'Покачивание'], ['boil', 'Дрожь линий'], ['none', 'Стоит']];
+  var ANIMS = [['party', 'Живой танец'], ['dance', 'Танец'], ['hop', 'Прыжки'], ['sway', 'Покачивание'], ['boil', 'Дрожь линий'], ['none', 'Стоит']];
   function ensureGrid() {
-    if (!music.id) { bgrid.id = null; return; }
+    if (!music.id) { bgrid.id = null; ensureClipGrid(); return; }
     if (bgrid.id === music.id || bgrid.busy || !window.DJ || !window.DJ.analyzeTrack) return;
     bgrid.busy = true; var want = music.id;
     window.DJ.analyzeTrack(want).then(function (r) { if (r && r.bpm) { bgrid.bpm = r.bpm; bgrid.off = r.off || 0; } bgrid.id = want; bgrid.busy = false; },
       function () { bgrid.id = want; bgrid.busy = false; });
   }
+  /* ритм из звука самого клипа (если отдельная музыка не выбрана) */
+  function ensureClipGrid() {
+    if (!window.DJ || !window.DJ.analyzeBlob) return;
+    clips.forEach(function (c) {
+      if (c.kind !== 'video' || c.sound === false || c.bg || c.bgBusy || !c.blob) return;
+      c.bgBusy = true;
+      window.DJ.analyzeBlob('clip:' + (c.bid || c.name) + ':' + c.blob.size, c.blob).then(function (r) {
+        c.bg = r && r.bpm ? r : { bpm: 0, off: 0 }; c.bgBusy = false; if (tab === 'chars') paintPane(); if (!playing && openNow) draw();
+      }, function () { c.bg = { bpm: 0, off: 0 }; c.bgBusy = false; });
+    });
+  }
+  function clipBeat() {
+    if (!clips.length) return null; var c = clips[indexAt(t)];
+    return c && c.kind === 'video' && c.sound !== false && c.bg && c.bg.bpm ? c : null;
+  }
+  function curBpm() { if (music.id && bgrid.id === music.id) return bgrid.bpm; var cb = clipBeat(); return cb ? cb.bg.bpm : 120; }
+  function beatText() {
+    if (music.id) return bgrid.id === music.id ? 'Ритм: из выбранной музыки, ' + Math.round(bgrid.bpm) + ' уд/мин.' : 'Ритм: считаю выбранную музыку…';
+    if (clipBeat()) return 'Ритм: из звука клипа, ' + Math.round(clipBeat().bg.bpm) + ' уд/мин. Герои танцуют под его песню.';
+    if (clips.some(function (c) { return c.bgBusy; })) return 'Ритм: слушаю звук клипа… (длинный клип может занять до минуты)';
+    return 'Ритм: не нашёл, герои двигаются в темпе 120. Включи звук клипа или выбери музыку на вкладке «Музыка».';
+  }
   function beatPos() {
+    if (!music.id) { var cb = clipBeat(); if (cb) return (cb.inp + (t - cb.start) - cb.bg.off) * cb.bg.bpm / 60; }
     var mt = (music.id ? music.start : 0) + t, bpm = bgrid.id === music.id && music.id ? bgrid.bpm : 120, off = bgrid.id === music.id && music.id ? bgrid.off : 0;
     return (mt - off) * bpm / 60;
   }
@@ -3834,8 +3888,9 @@ body.ed-open { overflow: hidden; }
       }
       if (pop <= 0.01) return;
       var N = 28, amt = c.amt, ph = ci * 1.7;
-      var rot = 0, sq = 1, hop = 0, wave = 0, wavePh = 0, jit = 0;
-      if (c.anim === 'dance') { rot = side * 0.07 * amt * (0.4 + 0.6 * Math.sin(Math.PI * fr)); sq = 1 - 0.07 * amt * kick; wave = 0.05 * amt; wavePh = b * Math.PI + ph; }
+      var rot = 0, sq = 1, hop = 0, wave = 0, wavePh = 0, jit = 0, party = c.anim === 'party';
+      if (party) { rot = side * 0.07 * amt * (0.35 + 0.65 * Math.sin(Math.PI * fr)); hop = Math.abs(Math.sin(Math.PI * fr)) * 0.028 * H * amt; sq = 1 - 0.05 * amt * kick; wave = 0.04 * amt; wavePh = b * Math.PI + ph; }
+      else if (c.anim === 'dance') { rot = side * 0.07 * amt * (0.4 + 0.6 * Math.sin(Math.PI * fr)); sq = 1 - 0.07 * amt * kick; wave = 0.05 * amt; wavePh = b * Math.PI + ph; }
       else if (c.anim === 'hop') { hop = Math.abs(Math.sin(Math.PI * fr)) * 0.1 * H * amt; sq = 1 + (fr < 0.15 ? -0.1 * amt * (1 - fr / 0.15) : 0); wave = 0.02 * amt; wavePh = b * Math.PI; }
       else if (c.anim === 'sway') { rot = Math.sin(t * 2.2 + ph) * 0.05 * amt; wave = 0.06 * amt; wavePh = t * 3 + ph; }
       else if (c.anim === 'boil') { jit = 0.012 * amt; }
@@ -3846,7 +3901,14 @@ body.ed-open { overflow: hidden; }
       }
       var fi = Math.floor(t * 8);
       var bl = c.blend && c.blend.on && HASF ? c.blend : null;
-      var im = c.frames ? c.frames[Math.floor(Math.max(0, t - c.t0) * c.fps) % c.frames.length] : c.img; if (!im || !im.width) im = c.img;
+      var im;
+      if (c.frames) {
+        var fl = c.frames.length, fidx;
+        if (c.sync !== false) { var per = Math.max(1, Math.round(fl / c.fps * curBpm() / 60)), ph0 = ((b / per) % 1 + 1) % 1; fidx = Math.floor(ph0 * fl) % fl; }
+        else fidx = Math.floor(Math.max(0, t - c.t0) * c.fps) % fl;
+        im = c.frames[fidx];
+      } else im = c.img;
+      if (!im || !im.width) im = c.img;
       var hcx = bx.cx + offX, hcy = bx.cy + offY - hop, hopK = Math.max(0.3, 1 - hop / H * 2);
       var sc = bl ? sceneAt(c, hcx, hcy, bx) : null;
       var xf = function (k) { k.translate(bx.cx + offX, bx.cy + offY + bx.h / 2 - hop); k.rotate(rot); k.scale((c.flip ? -1 : 1) * pop, sq * pop); };
@@ -3858,12 +3920,19 @@ body.ed-open { overflow: hidden; }
       if (bl && sc) { g.save(); xf(g); if (bl.refl > 0.02) reflection(g, bl, im, bx); if (bl.shd > 0.02) groundShadow(g, c, bl, sc, im, bx, hopK); g.restore(); }
       else if (c.shadow !== false) { g.save(); xf(g); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
       var paintHero = function (G) {
-        var sh = im.height / N;
+        var sh = im.height / N, tilt = party ? Math.sin(b * Math.PI) * 0.16 * amt : 0, nod = party ? kick * 0.014 * bx.h * amt : 0, step = party ? Math.abs(Math.sin(Math.PI * fr)) * 0.04 * bx.h * amt : 0;
         for (var i = 0; i < N; i++) {
           var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
           if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
           var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
-          G.drawImage(im, 0, i * sh, im.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
+          if (party && hh > 0.84) { dx += (hh - 0.84) * bx.h * Math.sin(tilt); dy += nod * Math.min(1, (hh - 0.84) / 0.08); }
+          if (party && hh < 0.3) {
+            var M = 8, sw2 = im.width / M, wl = 1 - cl01((hh - 0.05) / 0.25, 0, 1);
+            for (var q = 0; q < M; q++) {
+              var u = (q + 0.5) / M * 2 - 1, lift = side > 0 ? Math.max(0, -u) : Math.max(0, u);
+              G.drawImage(im, q * sw2, i * sh, sw2 + 1, sh + 1, -bx.w / 2 + dx + q * bx.w / M, -bx.h + (i * bx.h / N) + dy - step * lift * wl, bx.w / M + 1.5, bx.h / N + 1.5);
+            }
+          } else G.drawImage(im, 0, i * sh, im.width, sh + 1, -bx.w / 2 + dx, -bx.h + (i * bx.h / N) + dy, bx.w, bx.h / N + 1.5);
         }
         var m = c.mouth;
         if (m && m.on) {
@@ -3970,7 +4039,7 @@ body.ed-open { overflow: hidden; }
       var asp = cd.cv.width / cd.cv.height;
       c.size = Math.min(0.34, (1.6 / n) / asp * (W / H)); c.size = Math.max(0.12, c.size);
       c.x = n === 1 ? 0.5 : (k + 0.5) / n; c.y = 0.95 - c.size / 2 - 0.03; if (cd.kind === 'sheet') { c.size = 0.5; c.y = 0.5; c.x = 0.5; c.anim = 'sway'; }
-      c.anim = cd.kind === 'sheet' ? 'sway' : 'dance';
+      c.anim = cd.kind === 'sheet' ? 'sway' : cd.kind === 'person' ? 'party' : 'dance';
       c.blob = null; c.full = cd.full || null; if (cd.kind === 'person') { c.size = n === 1 ? 0.5 : Math.min(0.45, c.size * 1.3); c.y = 0.95 - c.size / 2 - 0.03; } chars.push(c);
       cd.cv.toBlob(function (bl) { c.blob = bl; saveProject(true); }, 'image/png');
     });
@@ -4168,6 +4237,7 @@ body.ed-open { overflow: hidden; }
     p.appendChild(chipRow([{ label: '🎬 Герой из видео: записать', on: true, fn: function () { openCam('vid'); } }, { label: '📁 из файла', fn: function () { $('#edVidFile').click(); } }]));
     if (!chars.length) { p.appendChild(el('div', 'ed-hint', 'Сними рисунок на светлом листе (можно сразу два листа в кадре) — герои вырежутся сами и оживут в ролике поверх фото и видео. Они пляшут в такт выбранной музыки.')); return; }
     var c = chars[selC] || chars[0]; if (!chars[selC]) selC = 0;
+    p.appendChild(el('div', 'ed-hint', beatText()));
     var tl = el('div', 'ed-tl'); tl.style.padding = '2px 0';
     chars.forEach(function (ch, i) {
       var b = el('button', 'cl' + (i === selC ? ' on' : '')); b.type = 'button'; b.style.width = '56px'; b.style.height = '56px'; b.style.background = '#2a2d34';

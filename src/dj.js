@@ -727,5 +727,16 @@
       return { bpm: r.bpm, off: r.off };
     }).catch(function () { return null; });
   }
-  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack };
+  /* ритм звука из любого файла (например звук видео-клипа в монтаже); key нужен, чтобы запомнить результат */
+  function analyzeBlob(key, blob) {
+    var gg = grid[key]; if (gg && gg.bpm) return Promise.resolve({ bpm: gg.bpm, off: gg.off || 0 });
+    if (!blob || blob.size > 150e6) return Promise.resolve(null);
+    return decode(blob).then(function (buf) {
+      var r = analyze(buf);
+      if (!r.bpm) return null;
+      grid[key] = { bpm: r.bpm, off: r.off }; saveGrid();
+      return { bpm: r.bpm, off: r.off };
+    }).catch(function () { return null; });
+  }
+  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob };
 })();
