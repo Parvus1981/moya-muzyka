@@ -70,16 +70,89 @@
     }
     for (i = 0; i < N; i++) { var L = lab[i]; if (L && !touch[L] && sizes[L] < person * 0.08) al[i] = 1; }
   }
-  /* убрать мусор, чуть подрезать край (там остаётся цвет старого фона) и смягчить его */
-  function refine(al, w, h) {
+  /* направляющий фильтр: подгоняет мягкую маску под настоящие края картинки (волосы, пальцы, кружево) */
+  function guided(I, P, w, h, r, eps) {
+    var N = w * h, i, II = new Float32Array(N), IP = new Float32Array(N);
+    for (i = 0; i < N; i++) { II[i] = I[i] * I[i]; IP[i] = I[i] * P[i]; }
+    var mI = boxBlur(I, w, h, r), mP = boxBlur(P, w, h, r), mII = boxBlur(II, w, h, r), mIP = boxBlur(IP, w, h, r), A = II, B = IP;
+    for (i = 0; i < N; i++) { var v = mII[i] - mI[i] * mI[i], c = mIP[i] - mI[i] * mP[i], a = c / (v + eps); A[i] = a; B[i] = mP[i] - a * mI[i]; }
+    var mA = boxBlur(A, w, h, r), mB = boxBlur(B, w, h, r), q = new Float32Array(N);
+    for (i = 0; i < N; i++) q[i] = mA[i] * I[i] + mB[i];
+    return q;
+  }
+  /* убрать мусор, закрыть дыры, подтянуть край к картинке, очистить цвет на краю от старого фона.
+     px: RGBA исходной картинки того же размера (цвет на краю правится на месте) */
+  function refine(al, w, h, px) {
     var i, N = w * h, mn = Math.min(w, h), keep = keepMain(al, w, h);
     if (keep) { var near = boxBlur(keep, w, h, Math.max(3, Math.round(mn * 0.012))); for (i = 0; i < N; i++) if (near[i] < 0.02) al[i] = 0; }
     fillHoles(al, w, h);
-    var b = boxBlur(al, w, h, Math.max(1, Math.round(mn * 0.003)));
-    for (i = 0; i < N; i++) al[i] = smooth(0.45, 0.88, b[i]);
+    if (px) {
+      var r = Math.max(3, Math.round(mn * 0.012)), q = new Float32Array(N), ch, G = new Float32Array(N);
+      for (ch = 0; ch < 3; ch++) {
+        for (i = 0; i < N; i++) G[i] = px[i * 4 + ch] / 255;
+        var qq = guided(G, al, w, h, r, 0.0009);
+        for (i = 0; i < N; i++) q[i] += qq[i] / 3;
+      }
+      for (i = 0; i < N; i++) al[i] = smooth(0.3, 0.72, Math.min(1, Math.max(0, q[i])));
+      /* цвет края: берём цвет изнутри героя, чтобы не было ореола старого фона (трава, небо) */
+      var strict = new Float32Array(N), cr = new Float32Array(N), cg = new Float32Array(N), cb = new Float32Array(N);
+      for (i = 0; i < N; i++) if (al[i] > 0.92) { strict[i] = 1; cr[i] = px[i * 4]; cg[i] = px[i * 4 + 1]; cb[i] = px[i * 4 + 2]; }
+      var rd = Math.max(3, Math.round(mn * 0.02)), ws = boxBlur(strict, w, h, rd), fr = boxBlur(cr, w, h, rd), fg = boxBlur(cg, w, h, rd), fb = boxBlur(cb, w, h, rd);
+      for (i = 0; i < N; i++) {
+        var a = al[i]; if (a <= 0.02 || a >= 0.97 || ws[i] < 0.01) continue;
+        var m = Math.min(0.9, 1.3 * (1 - a)), s = 1 / ws[i];
+        px[i * 4] += (fr[i] * s - px[i * 4]) * m; px[i * 4 + 1] += (fg[i] * s - px[i * 4 + 1]) * m; px[i * 4 + 2] += (fb[i] * s - px[i * 4 + 2]) * m;
+      }
+    } else {
+      var b2 = boxBlur(al, w, h, Math.max(1, Math.round(mn * 0.003)));
+      for (i = 0; i < N; i++) al[i] = smooth(0.45, 0.88, b2[i]);
+    }
   }
-  /* img -> Promise<canvas с прозрачным фоном, обрезан по человеку> */
+  /* mask-канвас для картинки: читаем результат сразу, модель переиспользует свой буфер */
+  function segment(canvas) {
+    return init().then(function (s) {
+      var w = canvas.width, h = canvas.height;
+      return new Promise(function (ok, bad) {
+        var to = setTimeout(function () { pending = null; bad(new Error('timeout')); }, 40000);
+        pending = function (r) {
+          clearTimeout(to);
+          try { var mc = document.createElement('canvas'); mc.width = w; mc.height = h; mc.getContext('2d', { willReadFrequently: true }).drawImage(r.segmentationMask, 0, 0, w, h); ok(mc); } catch (e) { bad(e); }
+        };
+        s.send({ image: canvas }).catch(function (e) { clearTimeout(to); pending = null; bad(e); });
+      });
+    });
+  }
+  /* где человек: рамка вокруг главной фигуры в долях кадра (или null) */
+  function locate(img) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, k = Math.min(1, 768 / Math.max(iw, ih)), w = Math.max(8, Math.round(iw * k)), h = Math.max(8, Math.round(ih * k));
+    var c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return segment(c).then(function (mc) {
+      var md = mc.getContext('2d').getImageData(0, 0, w, h).data, N = w * h, al = new Float32Array(N), i, x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (i = 0; i < N; i++) al[i] = md[i * 4] / 255 > 0.5 ? 1 : 0;
+      var keep = keepMain(al, w, h); if (!keep) return null;
+      for (i = 0; i < N; i++) if (keep[i]) { var x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (x1 < x0) return null;
+      return { x0: x0 / w, y0: y0 / h, x1: (x1 + 1) / w, y1: (y1 + 1) / h };
+    });
+  }
+  /* два прохода: сначала находим человека, потом вырезаем по увеличенному кадру вокруг него (из оригинала).
+     Далёкий человек так получает маску в разы чётче, а цвет берётся из полного разрешения */
   function cut(img) {
+    return locate(img).then(function (bb) {
+      var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+      if (!bb) return cutCore(img);
+      var bw = bb.x1 - bb.x0, bh = bb.y1 - bb.y0;
+      if (bw * bh > 0.5) return cutCore(img);
+      var ex = Math.max(bw * iw, bh * ih) * 0.14; /* поля вокруг человека, в пикселях оригинала */
+      var cx0 = Math.max(0, Math.floor(bb.x0 * iw - ex)), cy0 = Math.max(0, Math.floor(bb.y0 * ih - ex)), cx1 = Math.min(iw, Math.ceil(bb.x1 * iw + ex)), cy1 = Math.min(ih, Math.ceil(bb.y1 * ih + ex));
+      var cw = cx1 - cx0, ch = cy1 - cy0; if (cw < 16 || ch < 16) return cutCore(img);
+      var up = Math.min(3, Math.max(1, 900 / Math.max(cw, ch))), cc = document.createElement('canvas'); cc.width = Math.round(cw * up); cc.height = Math.round(ch * up);
+      cc.getContext('2d').drawImage(img, cx0, cy0, cw, ch, 0, 0, cc.width, cc.height);
+      return cutCore(cc).catch(function () { return cutCore(img); });
+    }, function () { return cutCore(img); });
+  }
+  /* один проход по картинке целиком -> Promise<{cv: канвас с прозрачным фоном, обрезан по человеку, full: оригинал того же размера}> */
+  function cutCore(img) {
     return init().then(function (s) {
       var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, k = Math.min(1, 1600 / Math.max(iw, ih)), w = Math.round(iw * k), h = Math.round(ih * k);
       var src = document.createElement('canvas'); src.width = w; src.height = h; var sg = src.getContext('2d', { willReadFrequently: true }); sg.drawImage(img, 0, 0, w, h);
@@ -94,22 +167,18 @@
             /* маска лежит в красном канале (0..255) */
             var al0 = new Float32Array(N);
             for (i = 0; i < N; i++) al0[i] = smooth(0.25, 0.5, md[i * 4] / 255);
-            refine(al0, w, h);
+            refine(al0, w, h, d);
             for (i = 0; i < N; i++) {
               var a = al0[i]; d[i * 4 + 3] = Math.round(a * 255);
               if (a > 0.5) { var x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; cnt++; }
             }
             if (cnt < N * 0.01) { bad(new Error('nobody')); return; }
-            sg.putImageData(id, 0, 0);
             var pad = 4; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
-            var out = document.createElement('canvas'); out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
-            var full = document.createElement('canvas'); full.width = out.width; full.height = out.height;
+            var cw = x1 - x0 + 1, ch2 = y1 - y0 + 1, out = document.createElement('canvas'); out.width = cw; out.height = ch2;
+            out.getContext('2d').putImageData(id, -x0, -y0, x0, y0, cw, ch2);
+            var full = document.createElement('canvas'); full.width = cw; full.height = ch2;
             var raw = document.createElement('canvas'); raw.width = w; raw.height = h; raw.getContext('2d').drawImage(img, 0, 0, w, h);
-            full.getContext('2d').drawImage(raw, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
-            out.getContext('2d').drawImage(full, 0, 0);
-            var od = out.getContext('2d').getImageData(0, 0, out.width, out.height), od2 = od.data, j;
-            for (j = 0; j < out.width * out.height; j++) { var xx = (j % out.width) + x0, yy = ((j / out.width) | 0) + y0; od2[j * 4 + 3] = id.data[(yy * w + xx) * 4 + 3]; }
-            out.getContext('2d').putImageData(od, 0, 0);
+            full.getContext('2d').drawImage(raw, x0, y0, cw, ch2, 0, 0, cw, ch2);
             ok({ cv: out, full: full });
           } catch (e) { bad(e); }
         };
@@ -131,14 +200,16 @@
             mg.drawImage(r.segmentationMask, 0, 0, w, h);
             var md = mg.getImageData(0, 0, w, h).data, out = document.createElement('canvas'); out.width = w; out.height = h;
             var og = out.getContext('2d', { willReadFrequently: true }); og.drawImage(src, 0, 0);
-            var id = og.getImageData(0, 0, w, h), d = id.data, N = w * h, al = new Float32Array(N), i;
-            for (i = 0; i < N; i++) { var a = smooth(0.4, 0.62, md[i * 4] / 255); if (prev) a = 0.55 * a + 0.45 * prev[i]; al[i] = a; d[i * 4 + 3] = Math.round(a * 255); }
-            og.putImageData(id, 0, 0); ok({ cv: out, alpha: al });
+            var id = og.getImageData(0, 0, w, h), d = id.data, N = w * h, raw0 = new Float32Array(N), al = new Float32Array(N), i;
+            for (i = 0; i < N; i++) { var a = smooth(0.25, 0.5, md[i * 4] / 255); if (prev) a = 0.55 * a + 0.45 * prev[i]; raw0[i] = a; al[i] = a; }
+            refine(al, w, h, d);
+            for (i = 0; i < N; i++) d[i * 4 + 3] = Math.round(al[i] * 255);
+            og.putImageData(id, 0, 0); ok({ cv: out, alpha: raw0 });
           } catch (e) { bad(e); }
         };
         s.send({ image: src }).catch(function (e) { clearTimeout(to); pending = null; bad(e); });
       });
     });
   }
-  window.Person = { cut: cut, frame: frame, ready: init };
+  window.Person = { cut: cut, frame: frame, ready: init, core: cutCore };
 })();

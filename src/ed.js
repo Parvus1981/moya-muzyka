@@ -336,9 +336,34 @@
 
   /* ---------- вживление героя в кадр: цвет и свет сцены, тени, мягкость, зерно ---------- */
   var HASF = (function () { try { return 'filter' in CanvasRenderingContext2D.prototype; } catch (e) { return false; } })();
-  var lay = document.createElement('canvas'), lg = lay.getContext('2d'), tiny = document.createElement('canvas'), tg = tiny.getContext('2d', { willReadFrequently: true }), grainPat = null;
+  var lay = document.createElement('canvas'), lg = lay.getContext('2d'), tiny = document.createElement('canvas'), tg = tiny.getContext('2d', { willReadFrequently: true });
   tiny.width = 12; tiny.height = 12;
-  var BLEND_DEF = { on: true, col: 0.5, shd: 0.6, soft: 0.5, grain: 0.4, light: 0.5, refl: 0 };
+  var tnC = document.createElement('canvas'), tnG = tnC.getContext('2d');
+  var BLEND_DEF = { on: true, col: 0.5, shd: 0.6, soft: 0.25, grain: 0.4, light: 0.5, refl: 0, wrap: 0.5 };
+  /* «клей»: общий вид кадра (свечение светлых мест, зерно, виньетка) поверх клипа и героев вместе */
+  var glue = { on: true, bloom: 0.5, grain: 0.5, vig: 0.35 };
+  var glB = document.createElement('canvas'), glG = glB.getContext('2d'), glTile = null;
+  function makeGlueTile() {
+    var nc = document.createElement('canvas'); nc.width = nc.height = 256; var ng = nc.getContext('2d'), id = ng.createImageData(256, 256), d = id.data, i;
+    for (i = 0; i < 65536; i++) { var v = 128 + Math.round((Math.random() + Math.random() + Math.random() - 1.5) * 70); d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = Math.max(0, Math.min(255, v)); d[i * 4 + 3] = 255; }
+    ng.putImageData(id, 0, 0); return g.createPattern(nc, 'repeat');
+  }
+  function drawGlue() {
+    if (!glue.on || !HASF || !chars.length) return;
+    var any = false; chars.forEach(function (c) { if (c.blend && c.blend.on) any = true; }); if (!any) return;
+    if (glue.bloom > 0.02) {
+      var bw = Math.max(32, Math.round(W / 4)), bh = Math.max(32, Math.round(H / 4));
+      if (glB.width !== bw || glB.height !== bh) { glB.width = bw; glB.height = bh; } else glG.clearRect(0, 0, bw, bh);
+      glG.filter = 'brightness(0.75) contrast(1.6) blur(' + Math.max(2, bw * 0.025).toFixed(1) + 'px) saturate(1.3)'; glG.drawImage(cv, 0, 0, bw, bh); glG.filter = 'none';
+      g.save(); g.globalCompositeOperation = 'screen'; g.globalAlpha = Math.min(1, 0.55 * glue.bloom); g.drawImage(glB, 0, 0, W, H); g.restore();
+    }
+    if (glue.vig > 0.02) { var vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,' + (0.5 * glue.vig).toFixed(3) + ')'); g.save(); g.fillStyle = vg; g.fillRect(0, 0, W, H); g.restore(); }
+    if (glue.grain > 0.02) {
+      if (!glTile) glTile = makeGlueTile();
+      var ox = Math.floor(Math.random() * 256), oy = Math.floor(Math.random() * 256);
+      g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = Math.min(1, 0.32 * glue.grain); g.translate(-ox, -oy); g.fillStyle = glTile; g.fillRect(ox, oy, W, H); g.restore();
+    }
+  }
   function cl01(v, a, b) { return Math.max(a, Math.min(b, v)); }
   /* средний цвет, яркость и сторона света в кадре вокруг героя (до того как герой нарисован) */
   function sceneAt(c, cx, cy, bx) {
@@ -370,31 +395,40 @@
     } catch (e) {}
     c._hlFor = im; c._hl = Math.max(0.12, v); return c._hl;
   }
-  function makeGrain() {
-    var nc = document.createElement('canvas'); nc.width = nc.height = 128; var ng = nc.getContext('2d'), id = ng.createImageData(128, 128), d = id.data, i;
-    for (i = 0; i < 128 * 128; i++) { var v = Math.random(); d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v > 0.5 ? 255 : 0; d[i * 4 + 3] = Math.round(Math.abs(v - 0.5) * 2 * 255 * 0.6); }
-    ng.putImageData(id, 0, 0); return lg.createPattern(nc, 'repeat');
-  }
   /* тень под героем: мягкое пятно у ног + отброшенная тень в сторону от света */
-  function groundShadow(k, c, bl, sc, im, bx, hopK) {
-    var a = bl.shd * (0.22 + 0.45 * sc.L) * hopK;
+  function groundShadow(k, c, bl, sc, im, bx, air) {
+    var hopK = 1 - 0.55 * air, a = bl.shd * (0.22 + 0.45 * sc.L) * hopK;
     k.save(); k.translate(0, 2); k.scale(1, 0.14);
-    var r = bx.w * 0.42, rg = k.createRadialGradient(0, 0, 0, 0, 0, r); rg.addColorStop(0, 'rgba(0,0,0,' + (1.5 * a).toFixed(3) + ')'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    var r = bx.w * 0.42 * (1 - 0.25 * air), rg = k.createRadialGradient(0, 0, 0, 0, 0, r); rg.addColorStop(0, 'rgba(0,0,0,' + (1.5 * a).toFixed(3) + ')'); rg.addColorStop(1, 'rgba(0,0,0,0)');
     k.fillStyle = rg; k.beginPath(); k.arc(0, 0, r, 0, 7); k.fill(); k.restore();
     var sk = -0.35 * (1 - Math.min(1, Math.abs(sc.ld) * 4)) + sc.ld * 0.9; if (c.flip) sk = -sk;
     k.save(); k.globalAlpha = Math.min(0.7, a); k.filter = 'brightness(0) blur(' + (bx.h * 0.012 * (0.6 + bl.soft)).toFixed(2) + 'px)';
-    k.transform(1, 0, sk, -0.2 * hopK, 0, 2); k.drawImage(im, -bx.w / 2, -bx.h, bx.w, bx.h); k.restore();
+    k.transform(1, 0, sk, -0.14, 0, 2); k.drawImage(im, -bx.w / 2, -bx.h, bx.w, bx.h); k.restore();
   }
 
   /* отражение героя на глянцевом полу: нижняя часть, перевёрнутая, тающая вниз */
   var rfl = document.createElement('canvas'), rg = rfl.getContext('2d');
-  function reflection(k, bl, im, bx) {
+  function reflection(k, bl, im, bx, lift) {
     var rw = Math.max(2, Math.round(bx.w)), rh = Math.max(2, Math.round(bx.h * 0.55));
     if (rfl.width !== rw || rfl.height !== rh) { rfl.width = rw; rfl.height = rh; } else rg.clearRect(0, 0, rw, rh);
     rg.save(); rg.translate(0, rh); rg.scale(1, -1); rg.drawImage(im, 0, im.height * 0.45, im.width, im.height * 0.55, 0, 0, rw, rh); rg.restore();
     rg.globalCompositeOperation = 'destination-in';
     var gr = rg.createLinearGradient(0, 0, 0, rh); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); rg.fillStyle = gr; rg.fillRect(0, 0, rw, rh); rg.globalCompositeOperation = 'source-over';
-    k.save(); k.globalAlpha = Math.min(0.7, bl.refl * 0.7); k.filter = 'brightness(0.6) blur(' + (bx.h * 0.004 * (0.5 + bl.soft)).toFixed(2) + 'px)'; k.drawImage(rfl, -bx.w / 2, 2, bx.w, bx.h * 0.55); k.restore();
+    k.save(); k.globalAlpha = Math.min(0.7, bl.refl * 0.7); k.filter = 'brightness(0.6) blur(' + (bx.h * 0.004 * (0.5 + bl.soft)).toFixed(2) + 'px)'; k.drawImage(rfl, -bx.w / 2, 2 + 2 * (lift || 0), bx.w, bx.h * 0.55); k.restore();
+  }
+
+  /* свет фона заходит на край героя: цвет размытого фона ложится по контуру внутрь, край перестаёт быть вырезанным */
+  var rimC = document.createElement('canvas'), rimG = rimC.getContext('2d'), rimM = document.createElement('canvas'), rimMG = rimM.getContext('2d');
+  function lightWrap(bl, rx, ry, rw, rh, bx) {
+    if (!(bl.wrap > 0.02)) return;
+    var rad = Math.max(1.5, bx.h * 0.01), a = Math.min(1, bl.wrap * 1.2);
+    if (rimC.width !== rw || rimC.height !== rh) { rimC.width = rw; rimC.height = rh; rimM.width = rw; rimM.height = rh; } else { rimG.clearRect(0, 0, rw, rh); rimMG.clearRect(0, 0, rw, rh); }
+    rimG.globalCompositeOperation = 'source-over'; rimG.drawImage(lay, rx, ry, rw, rh, 0, 0, rw, rh);
+    rimMG.filter = 'blur(' + (rad * 1.6).toFixed(2) + 'px)'; rimMG.drawImage(lay, rx, ry, rw, rh, 0, 0, rw, rh); rimMG.filter = 'none';
+    rimG.globalCompositeOperation = 'destination-out'; rimG.drawImage(rimM, 0, 0);
+    rimG.globalCompositeOperation = 'source-in'; rimG.filter = 'blur(' + (rad * 2.6).toFixed(2) + 'px) brightness(1.35)'; rimG.drawImage(cv, rx, ry, rw, rh, 0, 0, rw, rh); rimG.filter = 'none';
+    rimG.globalCompositeOperation = 'source-over';
+    lg.save(); lg.globalCompositeOperation = 'source-atop'; lg.globalAlpha = a; lg.drawImage(rimC, rx, ry); lg.restore();
   }
   /* слой героя -> подгонка цвета, света, зерна -> на кадр */
   function blendLayer(c, bl, sc, cx, cy, bx, im) {
@@ -410,19 +444,25 @@
       lg.fillStyle = gy; lg.fillRect(rx, ry, rw, rh);
     }
     var mm = Math.min(1, bl.col * 1.6), mx = Math.max(sc.tr, sc.tg, sc.tb), chroma = (mx - Math.min(sc.tr, sc.tg, sc.tb)) / (mx + 1);
-    if (bl.col > 0.02) { lg.fillStyle = 'rgba(' + sc.tr + ',' + sc.tg + ',' + sc.tb + ',' + Math.min(0.42, (0.1 + 0.35 * chroma) * mm).toFixed(3) + ')'; lg.fillRect(rx, ry, rw, rh); }
-    if (bl.grain > 0.02) {
-      if (!grainPat) grainPat = makeGrain();
-      var ox = Math.floor(Math.random() * 128), oy = Math.floor(Math.random() * 128);
-      lg.globalAlpha = 0.5 * bl.grain; lg.translate(ox, oy); lg.fillStyle = grainPat; lg.fillRect(rx - ox, ry - oy, rw, rh);
-    }
     lg.restore();
+    if (bl.col > 0.02) {
+      /* умножение на цвет сцены: тёмное остаётся тёмным, контраст героя не падает (плоская полупрозрачная заливка его «туманила») */
+      var ts = Math.min(0.45, Math.min(1, bl.col * 1.5) * (0.25 + 0.75 * chroma)), tmx = Math.max(sc.tr, sc.tg, sc.tb, 1);
+      var mr = Math.round(255 * (1 + (sc.tr / tmx - 1) * ts)), mg = Math.round(255 * (1 + (sc.tg / tmx - 1) * ts)), mb = Math.round(255 * (1 + (sc.tb / tmx - 1) * ts));
+      if (tnC.width !== rw || tnC.height !== rh) { tnC.width = rw; tnC.height = rh; } else tnG.clearRect(0, 0, rw, rh);
+      tnG.drawImage(lay, rx, ry, rw, rh, 0, 0, rw, rh);
+      lg.save(); lg.globalCompositeOperation = 'multiply'; lg.fillStyle = 'rgb(' + mr + ',' + mg + ',' + mb + ')'; lg.fillRect(rx, ry, rw, rh);
+      lg.globalCompositeOperation = 'destination-in'; lg.drawImage(tnC, 0, 0, rw, rh, rx, ry, rw, rh); lg.restore();
+    }
+    lightWrap(bl, rx, ry, rw, rh, bx);
     var f = [];
     if (bl.col > 0.02) {
       var kk = cl01((sc.L + 0.12) / heroLum(c, im), 0.55, 1.1);
       f.push('brightness(' + (1 + (kk - 1) * mm).toFixed(3) + ')'); f.push('saturate(' + (1 - 0.1 * mm).toFixed(3) + ')');
     }
-    if (bl.soft > 0.04) f.push('blur(' + (bl.soft * Math.max(0.5, bx.h / 500)).toFixed(2) + 'px)');
+    var rcl = clips.length ? clips[indexAt(t)] : null, rsz = rcl && rcl.kind === 'video' ? srcSize(rcl) : null, resK = rsz && rsz[1] ? cl01(H / rsz[1] / 1.5, 0.8, 2.2) : 1;
+    if (bl.soft > 0.04) f.push('blur(' + (bl.soft * Math.max(0.5, bx.h / 500) * resK).toFixed(2) + 'px)');
+    if (bl.col > 0.02) f.push('contrast(1.05)');
     g.save(); if (f.length) g.filter = f.join(' '); g.drawImage(lay, rx, ry, rw, rh, rx, ry, rw, rh); g.restore();
   }
   function drawChars() {
@@ -450,9 +490,11 @@
       if (pop <= 0.01) return;
       var N = 28, amt = c.amt, ph = ci * 1.7;
       var rot = 0, sq = 1, hop = 0, wave = 0, wavePh = 0, jit = 0, party = c.anim === 'party';
-      if (party) { rot = side * 0.07 * amt * (0.35 + 0.65 * Math.sin(Math.PI * fr)); hop = Math.abs(Math.sin(Math.PI * fr)) * 0.028 * H * amt; sq = 1 - 0.05 * amt * kick; wave = 0.04 * amt; wavePh = b * Math.PI + ph; }
+      var hopAmp = c.anim === 'hop' ? 0.06 * H * amt : party ? 0.01 * H * amt : 0;
+      var hopAt = function (x) { x = ((x % 1) + 1) % 1; if (c.anim === 'hop') { var u = Math.min(1, Math.max(0, (x - 0.1) / 0.9)); return 4 * u * (1 - u) * hopAmp; } return Math.abs(Math.sin(Math.PI * x)) * hopAmp; };
+      if (party) { rot = side * 0.07 * amt * (0.35 + 0.65 * Math.sin(Math.PI * fr)); hop = hopAt(fr); sq = 1 - 0.05 * amt * kick; wave = 0.04 * amt; wavePh = b * Math.PI + ph; }
       else if (c.anim === 'dance') { rot = side * 0.07 * amt * (0.4 + 0.6 * Math.sin(Math.PI * fr)); sq = 1 - 0.07 * amt * kick; wave = 0.05 * amt; wavePh = b * Math.PI + ph; }
-      else if (c.anim === 'hop') { hop = Math.abs(Math.sin(Math.PI * fr)) * 0.1 * H * amt; sq = 1 + (fr < 0.15 ? -0.1 * amt * (1 - fr / 0.15) : 0); wave = 0.02 * amt; wavePh = b * Math.PI; }
+      else if (c.anim === 'hop') { var uh = Math.min(1, Math.max(0, (fr - 0.1) / 0.9)); hop = hopAt(fr); sq = 1 - 0.13 * amt * Math.max(0, 1 - fr / 0.14) + 0.04 * amt * Math.sin(Math.PI * uh); wave = 0.02 * amt; wavePh = b * Math.PI; rot = side * 0.025 * amt * Math.sin(Math.PI * uh); }
       else if (c.anim === 'sway') { rot = Math.sin(t * 2.2 + ph) * 0.05 * amt; wave = 0.06 * amt; wavePh = t * 3 + ph; }
       else if (c.anim === 'boil') { jit = 0.012 * amt; }
       if (walk > 0.001) { rot += Math.sin(t * 13) * 0.09 * walk; hop += Math.abs(Math.sin(t * 8.5)) * 0.035 * H * walk; }
@@ -478,14 +520,16 @@
         rgA.addColorStop(0, 'hsla(' + hue + ',95%,62%,' + (0.5 * pul).toFixed(3) + ')'); rgA.addColorStop(1, 'hsla(' + hue + ',95%,62%,0)');
         g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = rgA; g.fillRect(hcx - ar, hcy - ar, ar * 2, ar * 2); g.restore();
       }
-      if (bl && sc) { g.save(); xf(g); if (bl.refl > 0.02) reflection(g, bl, im, bx); if (bl.shd > 0.02) groundShadow(g, c, bl, sc, im, bx, hopK); g.restore(); }
-      else if (c.shadow !== false) { g.save(); xf(g); g.globalAlpha = 0.25; g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - hop / H * 2), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
+      var air = Math.min(1, hop / (0.08 * H)), xg = function (k) { k.translate(bx.cx + offX, bx.cy + offY + bx.h / 2); k.scale((c.flip ? -1 : 1) * pop, pop); };
+      if (bl && sc) { g.save(); xg(g); if (bl.refl > 0.02) reflection(g, bl, im, bx, hop / Math.max(0.2, pop)); if (bl.shd > 0.02) groundShadow(g, c, bl, sc, im, bx, air); g.restore(); }
+      else if (c.shadow !== false) { g.save(); xg(g); g.globalAlpha = 0.25 * (1 - 0.5 * air); g.fillStyle = '#000'; g.beginPath(); g.ellipse(0, 4, bx.w * 0.3 * (1 - 0.3 * air), bx.h * 0.02, 0, 0, 7); g.fill(); g.restore(); }
       var paintHero = function (G) {
-        var sh = im.height / N, tilt = party ? Math.sin(b * Math.PI) * 0.16 * amt : 0, nod = party ? kick * 0.014 * bx.h * amt : 0, step = party ? Math.abs(Math.sin(Math.PI * fr)) * 0.04 * bx.h * amt : 0;
+        var sh = im.height / N, tilt = party ? Math.sin(b * Math.PI) * 0.16 * amt : 0, nod = party ? kick * 0.014 * bx.h * amt : 0, step = party ? Math.abs(Math.sin(Math.PI * fr)) * 0.025 * bx.h * amt : 0;
         for (var i = 0; i < N; i++) {
           var hh = 1 - (i + 0.5) / N, dx = Math.sin(wavePh - hh * 3.2) * wave * bx.w * hh;
           if (jit) dx += (hash(fi * 31 + i * 7 + ci) - 0.5) * 2 * jit * bx.w;
           var dy = jit ? (hash(fi * 17 + i * 3 + ci) - 0.5) * jit * bx.h : 0;
+          if (hopAmp) dy -= (hopAt(fr - 0.12 * hh) - hopAt(fr)) * (1 / Math.max(0.2, pop));
           if (party && hh > 0.84) { dx += (hh - 0.84) * bx.h * Math.sin(tilt); dy += nod * Math.min(1, (hh - 0.84) / 0.08); }
           if (party && hh < 0.3) {
             var M = 8, sw2 = im.width / M, wl = 1 - cl01((hh - 0.05) / 0.25, 0, 1);
@@ -765,7 +809,7 @@
       var cw = x1 - x0 + 1, ch = y1 - y0 + 1;
       var out = frames.map(function (f) { var cc = document.createElement('canvas'); cc.width = cw; cc.height = ch; cc.getContext('2d').drawImage(f, x0, y0, cw, ch, 0, 0, cw, ch); return cc; });
       var c = mkChar(out[0], 'chv' + Date.now().toString(36) + (uid++));
-      c.frames = out; c.fps = 12; c.img = out[0]; c.blend = { on: true, col: 0.3, shd: 0.5, soft: 0.25, grain: 0.35, light: 0.35 }; c.anim = 'none'; c.size = 0.5; c.x = 0.5; c.y = 0.95 - c.size / 2 - 0.03; c.fb = [];
+      c.frames = out; c.fps = 12; c.img = out[0]; c.blend = { on: true, col: 0.3, shd: 0.5, soft: 0.15, grain: 0.35, light: 0.35, refl: 0, wrap: 0.4 }; c.anim = 'none'; c.size = 0.5; c.x = 0.5; c.y = 0.95 - c.size / 2 - 0.03; c.fb = [];
       chars.push(c); selC = chars.length - 1; tab = 'chars';
       out.reduce(function (pr, cc, k) { return pr.then(function () { return new Promise(function (ok) { cc.toBlob(function (bl) { c.fb[k] = bl; ok(); }, 'image/png'); }); }); }, Promise.resolve()).then(function () { saveProject(true); });
       $('#edProc').hidden = true; paintTabs(); paintPane(); if (!playing) draw(); toast('Герой готов. Двигай и увеличивай его, он двигается как в видео');
@@ -824,8 +868,8 @@
     var bl = c.blend, blSet = function (o) { Object.keys(o).forEach(function (k) { bl[k] = o[k]; }); bl.on = true; saveProject(); paintPane(); if (!playing) draw(); };
     p.appendChild(chipRow([
       { label: bl.on ? 'Вжиться в кадр: вкл' : 'Вжиться в кадр: выкл', on: bl.on, fn: function () { bl.on = !bl.on; saveProject(); paintPane(); if (!playing) draw(); } },
-      { label: 'Естественно', fn: function () { blSet({ col: 0.5, shd: 0.6, soft: 0.5, grain: 0.4, light: 0.5 }); } },
-      { label: 'Сильнее', fn: function () { blSet({ col: 0.8, shd: 0.85, soft: 0.8, grain: 0.7, light: 0.75, refl: 0.3 }); } }
+      { label: 'Естественно', fn: function () { blSet({ col: 0.5, shd: 0.6, soft: 0.25, light: 0.5, wrap: 0.5 }); glue.bloom = 0.5; glue.grain = 0.5; glue.vig = 0.35; glue.on = true; } },
+      { label: 'Сильнее', fn: function () { blSet({ col: 0.8, shd: 0.85, soft: 0.45, light: 0.75, wrap: 0.85, refl: 0.3 }); glue.bloom = 0.8; glue.grain = 0.75; glue.vig = 0.5; glue.on = true; } }
     ], 'Вжиться'));
     if (!HASF) p.appendChild(el('div', 'ed-hint', 'В этом браузере не работают фильтры холста, поэтому вживление недоступно.'));
     else if (bl.on) {
@@ -835,7 +879,13 @@
       p.appendChild(slider('Объём от света', 0, 1, 0.05, bl.light, pct, function (v) { bl.light = v; saveProject(); if (!playing) draw(); }));
       p.appendChild(slider('Отражение на полу', 0, 1, 0.05, bl.refl || 0, pct, function (v) { bl.refl = v; saveProject(); if (!playing) draw(); }));
       p.appendChild(slider('Мягкость краёв', 0, 1, 0.05, bl.soft, pct, function (v) { bl.soft = v; saveProject(); if (!playing) draw(); }));
-      p.appendChild(slider('Зерно как в видео', 0, 1, 0.05, bl.grain, pct, function (v) { bl.grain = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(slider('Свет фона по краю', 0, 1, 0.05, bl.wrap == null ? 0.5 : bl.wrap, pct, function (v) { bl.wrap = v; saveProject(); if (!playing) draw(); }));
+      p.appendChild(chipRow([{ label: glue.on ? 'Единый вид кадра: вкл' : 'Единый вид кадра: выкл', on: glue.on, fn: function () { glue.on = !glue.on; saveProject(); paintPane(); if (!playing) draw(); } }], 'Склейка'));
+      if (glue.on) {
+        p.appendChild(slider('Свечение светлых мест', 0, 1, 0.05, glue.bloom, pct, function (v) { glue.bloom = v; saveProject(); if (!playing) draw(); }));
+        p.appendChild(slider('Зерно на весь кадр', 0, 1, 0.05, glue.grain, pct, function (v) { glue.grain = v; saveProject(); if (!playing) draw(); }));
+        p.appendChild(slider('Виньетка', 0, 1, 0.05, glue.vig, pct, function (v) { glue.vig = v; saveProject(); if (!playing) draw(); }));
+      }
     }
     p.appendChild(chipRow([
       { label: c.mouth.on ? 'Поющий рот: вкл' : 'Поющий рот: выкл', on: c.mouth.on, fn: function () { c.mouth.on = !c.mouth.on; if (c.mouth.on) placing = true; else placing = false; saveProject(); paintPane(); if (!playing) draw(); } },
@@ -863,6 +913,7 @@
       } else drawClip(clips[i], i, prog(clips[i]), 1, 0);
     }
     drawChars();
+    drawGlue();
     drawTitles();
   }
 
@@ -1237,8 +1288,8 @@
     });
   }
   function sigOf() {
-    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
+    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, glue, titles, music.id, music.start, music.vol, music.fade,
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -1250,7 +1301,7 @@
     if (saving) { again = true; return; }
     var sig = sigOf(); if (!force && sig === lastSig) return;
     saving = true;
-    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, titles: titles,
+    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, glue: glue, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
       chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
@@ -1280,6 +1331,7 @@
         origVol = meta.origVol == null ? 1 : meta.origVol; titles = meta.titles || [];
         if (meta.trans) trans = { type: meta.trans.type || 'fade', dur: meta.trans.dur || 0.6, scope: meta.trans.scope || 'photos' };
         if (meta.kbAmt != null) kbAmt = meta.kbAmt;
+        if (meta.glue) Object.keys(meta.glue).forEach(function (k) { glue[k] = meta.glue[k]; });
         meta.clips.forEach(function (m) {
           var b = blobs[m.bid]; if (!b) return;
           var url = urls[m.bid] || (urls[m.bid] = URL.createObjectURL(b));
