@@ -21,6 +21,11 @@ self.addEventListener('fetch', (e) => {
   const sameOrigin = url.origin === location.origin;
   const isFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (!sameOrigin && !isFont) return;
+  if (sameOrigin && url.pathname.indexOf('/ml/') !== -1) {
+    // тяжёлая модель вырезки и её движок (около 37 МБ): качаются один раз и не пропадают при обновлении приложения
+    e.respondWith(caches.open('ml-v1').then((c) => c.match(req).then((hit) => hit || fetch(req).then((res) => { if (res && res.ok) c.put(req, res.clone()); return res; }))));
+    return;
+  }
   if (req.mode === 'navigate') {
     // pages: fresh from the network when online, saved copy when offline
     e.respondWith(

@@ -665,14 +665,15 @@
   }
   $('#edScanPerson').addEventListener('click', function () {
     if (!scanImg || !window.Person) return; var info = $('#edScanInfo'), btn = this; btn.disabled = true;
-    info.textContent = 'Вырезаю человека… первый раз загружается модель (около 6 МБ), потом быстро и без интернета.';
+    info.textContent = 'Вырезаю человека… в первый раз скачается модель (около 37 МБ), потом всё работает без интернета. Это может занять до минуты.';
+    window.Person.onStatus = function (t) { if (t) info.textContent = t; };
     window.Person.cut(scanImg).then(function (res) {
-      btn.disabled = false;
+      btn.disabled = false; window.Person.onStatus = null;
       var cd = { cv: res.cv, full: res.full, kind: 'person', sel: true, sheet: 0, w: res.cv.width, h: res.cv.height };
       if (!scanRes) scanRes = { cands: [] }; scanRes.cands.unshift(cd); addCandBtn(cd, true); $('#edScanAdd').hidden = false;
-      info.textContent = 'Человек вырезан. Края можно подчистить потом кнопкой «Подчистить» у героя.';
+      info.textContent = 'Человек вырезан. Края можно подчистить потом кнопкой «Подчистить» у героя.' + (window.Person.lastEngine === 'selfie' ? ' Точная модель не загрузилась (нужен интернет в первый раз), поэтому вырезка простая: попробуй ещё раз при интернете.' : '');
     }, function (e) {
-      btn.disabled = false;
+      btn.disabled = false; window.Person.onStatus = null;
       info.textContent = (e && e.message === 'nobody') ? 'Человека на фото не нашёл. Попробуй снять крупнее и при хорошем свете.' : 'Не получилось загрузить вырезку человека (нужен интернет в первый раз). Рисунки вырезаются и без неё.';
     });
   });

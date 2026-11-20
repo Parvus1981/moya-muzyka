@@ -82,18 +82,21 @@
   }
   /* убрать мусор, закрыть дыры, подтянуть край к картинке, очистить цвет на краю от старого фона.
      px: RGBA исходной картинки того же размера (цвет на краю правится на месте) */
-  function refine(al, w, h, px) {
+  function refine(al, w, h, px, soft) {
     var i, N = w * h, mn = Math.min(w, h), keep = keepMain(al, w, h);
     if (keep) { var near = boxBlur(keep, w, h, Math.max(3, Math.round(mn * 0.012))); for (i = 0; i < N; i++) if (near[i] < 0.02) al[i] = 0; }
     fillHoles(al, w, h);
     if (px) {
-      var r = Math.max(3, Math.round(mn * 0.012)), q = new Float32Array(N), ch, G = new Float32Array(N);
-      for (ch = 0; ch < 3; ch++) {
-        for (i = 0; i < N; i++) G[i] = px[i * 4 + ch] / 255;
-        var qq = guided(G, al, w, h, r, 0.0009);
-        for (i = 0; i < N; i++) q[i] += qq[i] / 3;
+      if (soft) { for (i = 0; i < N; i++) al[i] = smooth(0.06, 0.9, al[i]); }
+      else {
+        var r = Math.max(3, Math.round(mn * 0.012)), q = new Float32Array(N), ch, G = new Float32Array(N);
+        for (ch = 0; ch < 3; ch++) {
+          for (i = 0; i < N; i++) G[i] = px[i * 4 + ch] / 255;
+          var qq = guided(G, al, w, h, r, 0.0009);
+          for (i = 0; i < N; i++) q[i] += qq[i] / 3;
+        }
+        for (i = 0; i < N; i++) al[i] = smooth(0.3, 0.72, Math.min(1, Math.max(0, q[i])));
       }
-      for (i = 0; i < N; i++) al[i] = smooth(0.3, 0.72, Math.min(1, Math.max(0, q[i])));
       /* цвет края: берём цвет изнутри героя, чтобы не было ореола старого фона (трава, небо) */
       var strict = new Float32Array(N), cr = new Float32Array(N), cg = new Float32Array(N), cb = new Float32Array(N);
       for (i = 0; i < N; i++) if (al[i] > 0.92) { strict[i] = 1; cr[i] = px[i * 4]; cg[i] = px[i * 4 + 1]; cb[i] = px[i * 4 + 2]; }
@@ -137,7 +140,7 @@
   }
   /* два прохода: сначала находим человека, потом вырезаем по увеличенному кадру вокруг него (из оригинала).
      Далёкий человек так получает маску в разы чётче, а цвет берётся из полного разрешения */
-  function cut(img) {
+  function cutSelfie(img) {
     return locate(img).then(function (bb) {
       var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
       if (!bb) return cutCore(img);
@@ -211,5 +214,111 @@
       });
     });
   }
-  window.Person = { cut: cut, frame: frame, ready: init, core: cutCore };
+
+  /* ---------- MODNet на ONNX Runtime Web: мягкая точная вырезка человека (модель и движок лежат в приложении, public/ml) ---------- */
+  var ortSess = null, ortLoading = null;
+  function status(t) { var P = window.Person; if (P && typeof P.onStatus === 'function') P.onStatus(t); }
+  function absUrl(u) { return new URL(u, document.baseURI).href; }
+  function fetchBuf(url, label) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      var total = +r.headers.get('content-length') || 0;
+      if (!r.body || !r.body.getReader) return r.arrayBuffer();
+      var rd = r.body.getReader(), parts = [], got = 0;
+      return (function pump() {
+        return rd.read().then(function (x) {
+          if (x.done) { var out = new Uint8Array(got), o = 0; parts.forEach(function (q) { out.set(q, o); o += q.length; }); return out.buffer; }
+          parts.push(x.value); got += x.value.length;
+          if (total) status(label + ' ' + Math.round(Math.min(got, total) / 1048576) + ' из ' + Math.round(total / 1048576) + ' МБ');
+          return pump();
+        });
+      })();
+    });
+  }
+  function initOrt() {
+    if (ortSess) return Promise.resolve(ortSess);
+    if (ortLoading) return ortLoading;
+    status('Загружаю движок вырезки…');
+    ortLoading = loadScript('ml/ort.wasm.min.js').then(function () {
+      var o = window.ort; o.env.wasm.numThreads = 1; o.env.wasm.proxy = false;
+      o.env.wasm.wasmPaths = { mjs: absUrl('ml/ort-loader.js'), wasm: absUrl('ml/ort-wasm-simd-threaded.wasm') };
+      return fetchBuf(absUrl('ml/ort-wasm-simd-threaded.wasm'), 'Загружаю движок:').then(function () {});
+    }).then(function () { return fetchBuf(absUrl('ml/modnet.onnx'), 'Загружаю модель вырезки (один раз):'); })
+      .then(function (buf) { status('Запускаю модель…'); return window.ort.InferenceSession.create(new Uint8Array(buf), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }); })
+      .then(function (s) { ortSess = s; return s; })
+      .catch(function (e) { ortLoading = null; throw e; });
+    return ortLoading;
+  }
+  function resizeAlpha(a, sw, sh, dw, dh) {
+    var out = new Float32Array(dw * dh), x, y, xi0 = new Int32Array(dw), xi1 = new Int32Array(dw), xw = new Float32Array(dw), xr = sw / dw, yr = sh / dh;
+    for (x = 0; x < dw; x++) { var fx = Math.max(0, (x + 0.5) * xr - 0.5), x0 = Math.min(sw - 1, Math.floor(fx)); xi0[x] = x0; xi1[x] = Math.min(sw - 1, x0 + 1); xw[x] = fx - x0; }
+    for (y = 0; y < dh; y++) {
+      var fy = Math.max(0, (y + 0.5) * yr - 0.5), y0 = Math.min(sh - 1, Math.floor(fy)), y1 = Math.min(sh - 1, y0 + 1), wy = fy - y0, r0 = y0 * sw, r1 = y1 * sw, ro = y * dw;
+      for (x = 0; x < dw; x++) {
+        var a0 = a[r0 + xi0[x]] * (1 - xw[x]) + a[r0 + xi1[x]] * xw[x], a1 = a[r1 + xi0[x]] * (1 - xw[x]) + a[r1 + xi1[x]] * xw[x], v = a0 * (1 - wy) + a1 * wy;
+        out[ro + x] = v < 0 ? 0 : v > 1 ? 1 : v;
+      }
+    }
+    return out;
+  }
+  /* мягкая маска человека (0..1) того же размера, что и канвас; ref: короткая сторона для модели */
+  function matte(canvas, ref) {
+    return initOrt().then(function (s) {
+      var w = canvas.width, h = canvas.height, k = ref / Math.min(w, h), L = Math.max(w, h) * k; if (L > 1088) k *= 1088 / L;
+      var nw = Math.max(32, Math.round(w * k / 32) * 32), nh = Math.max(32, Math.round(h * k / 32) * 32);
+      var tc = document.createElement('canvas'); tc.width = nw; tc.height = nh; var tg = tc.getContext('2d', { willReadFrequently: true }); tg.imageSmoothingQuality = 'high'; tg.drawImage(canvas, 0, 0, nw, nh);
+      var d = tg.getImageData(0, 0, nw, nh).data, N = nw * nh, f = new Float32Array(3 * N), i;
+      for (i = 0; i < N; i++) { f[i] = d[i * 4] / 127.5 - 1; f[N + i] = d[i * 4 + 1] / 127.5 - 1; f[2 * N + i] = d[i * 4 + 2] / 127.5 - 1; }
+      status('Вырезаю человека…');
+      return new Promise(function (go) { setTimeout(go, 40); }).then(function () { return s.run({ input: new window.ort.Tensor('float32', f, [1, 3, nh, nw]) }); })
+        .then(function (out) { return resizeAlpha(out[Object.keys(out)[0]].data, nw, nh, w, h); });
+    });
+  }
+  function canvasFrom(img, sx, sy, sw, sh, dw, dh) {
+    var c = document.createElement('canvas'); c.width = dw; c.height = dh; var g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh); return c;
+  }
+  function bboxOfAlpha(a, w, h) {
+    var N = w * h, b = new Float32Array(N), i, x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (i = 0; i < N; i++) b[i] = a[i] > 0.5 ? 1 : 0;
+    var keep = keepMain(b, w, h); if (!keep) return null;
+    for (i = 0; i < N; i++) if (keep[i]) { var x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    return x1 < x0 ? null : { x0: x0 / w, y0: y0 / h, x1: (x1 + 1) / w, y1: (y1 + 1) / h };
+  }
+  /* маска + исходные цвета -> {cv: человек на прозрачном фоне, обрезан по рамке, full: оригинал того же размера} */
+  function finishCut(src, al, w, h) {
+    var id = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h), d = id.data, N = w * h, i, x0 = w, y0 = h, x1 = 0, y1 = 0, cnt = 0;
+    refine(al, w, h, d, true);
+    for (i = 0; i < N; i++) {
+      var a = al[i]; d[i * 4 + 3] = Math.round(a * 255);
+      if (a > 0.5) { var x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; cnt++; }
+    }
+    if (cnt < N * 0.005) throw new Error('nobody');
+    var pad = 4; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
+    var cw = x1 - x0 + 1, ch = y1 - y0 + 1, out = document.createElement('canvas'); out.width = cw; out.height = ch;
+    out.getContext('2d').putImageData(id, -x0, -y0, x0, y0, cw, ch);
+    var full = document.createElement('canvas'); full.width = cw; full.height = ch; full.getContext('2d').drawImage(src, x0, y0, cw, ch, 0, 0, cw, ch);
+    return { cv: out, full: full };
+  }
+  /* два прохода: находим человека по всему кадру, потом вырезаем по увеличенному кадру вокруг него (если он небольшой) */
+  function cutModnet(img) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    var k1 = Math.min(1, 1024 / Math.max(iw, ih)), w1 = Math.max(8, Math.round(iw * k1)), h1 = Math.max(8, Math.round(ih * k1));
+    return matte(canvasFrom(img, 0, 0, iw, ih, w1, h1), 512).then(function (a1) {
+      var bb = bboxOfAlpha(a1, w1, h1); if (!bb) throw new Error('nobody');
+      var bw = bb.x1 - bb.x0, bh = bb.y1 - bb.y0, rx = 0, ry = 0, rw = iw, rh = ih, whole = true;
+      if (bw * bh <= 0.5) {
+        var ex = Math.max(bw * iw, bh * ih) * 0.14, cx0 = Math.max(0, Math.floor(bb.x0 * iw - ex)), cy0 = Math.max(0, Math.floor(bb.y0 * ih - ex)), cx1 = Math.min(iw, Math.ceil(bb.x1 * iw + ex)), cy1 = Math.min(ih, Math.ceil(bb.y1 * ih + ex));
+        if (cx1 - cx0 >= 16 && cy1 - cy0 >= 16) { rx = cx0; ry = cy0; rw = cx1 - cx0; rh = cy1 - cy0; whole = false; }
+      }
+      var s = Math.min(1, 1600 / Math.max(rw, rh)), w = Math.max(8, Math.round(rw * s)), h = Math.max(8, Math.round(rh * s)), src = canvasFrom(img, rx, ry, rw, rh, w, h);
+      return (whole ? Promise.resolve(resizeAlpha(a1, w1, h1, w, h)) : matte(src, 512)).then(function (al) { return finishCut(src, al, w, h); });
+    });
+  }
+  /* основной вход: точная модель, если не получилось (нет интернета в первый раз) — простая встроенная */
+  function cut(img) {
+    return cutModnet(img).then(function (r) { window.Person.lastEngine = 'modnet'; return r; }, function () {
+      status('Точная модель недоступна, вырезаю простым способом…'); window.Person.lastEngine = 'selfie'; return cutSelfie(img);
+    });
+  }
+  window.Person = { cut: cut, cutSelfie: cutSelfie, cutModnet: cutModnet, frame: frame, ready: init, core: cutCore, onStatus: null, lastEngine: '' };
 })();
