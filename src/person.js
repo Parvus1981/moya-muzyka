@@ -320,5 +320,22 @@
       status('Точная модель недоступна, вырезаю простым способом…'); window.Person.lastEngine = 'selfie'; return cutSelfie(img);
     });
   }
-  window.Person = { cut: cut, cutSelfie: cutSelfie, cutModnet: cutModnet, frame: frame, ready: init, core: cutCore, onStatus: null, lastEngine: '' };
+  /* кадр видео: точная модель с гладкостью по времени; если модель недоступна — простая */
+  var modnetBad = false;
+  function warm() { return initOrt().then(function () { return true; }, function () { modnetBad = true; return init().then(function () { return false; }); }); }
+  function frameBest(src, prev) {
+    if (modnetBad) return frame(src, prev);
+    var w = src.width, h = src.height;
+    return matte(src, 352).then(function (al) {
+      var N = w * h, i, raw0 = new Float32Array(N);
+      if (prev && prev.length === N) for (i = 0; i < N; i++) al[i] = 0.62 * al[i] + 0.38 * prev[i];
+      raw0.set(al);
+      var out = document.createElement('canvas'); out.width = w; out.height = h; var og = out.getContext('2d', { willReadFrequently: true }); og.drawImage(src, 0, 0);
+      var id = og.getImageData(0, 0, w, h), d = id.data;
+      refine(al, w, h, d, true);
+      for (i = 0; i < N; i++) d[i * 4 + 3] = Math.round(al[i] * 255);
+      og.putImageData(id, 0, 0); return { cv: out, alpha: raw0 };
+    }, function () { modnetBad = true; return frame(src, prev); });
+  }
+  window.Person = { cut: cut, cutSelfie: cutSelfie, cutModnet: cutModnet, frame: frame, frameBest: frameBest, warm: warm, ready: init, core: cutCore, onStatus: null, lastEngine: '' };
 })();

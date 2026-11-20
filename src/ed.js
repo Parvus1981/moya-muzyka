@@ -792,12 +792,12 @@
   function pbar(i, n, txt) { $('#edProcBar').style.width = (n ? i / n * 100 : 0).toFixed(1) + '%'; $('#edProcInfo').textContent = txt || ('Кадр ' + i + ' из ' + n); }
   function seekTo(v, tm) { return new Promise(function (ok) { var done = false; function fin() { if (!done) { done = true; v.removeEventListener('seeked', fin); ok(); } } v.addEventListener('seeked', fin); v.currentTime = tm; setTimeout(fin, 3000); }); }
   function makeVideoHero(n, getRaw) {
-    proc.cancel = false; $('#edProc').hidden = false; pbar(0, n, 'Загружаю вырезку (первый раз ~6 МБ, нужен интернет)…');
+    proc.cancel = false; $('#edProc').hidden = false; pbar(0, n, 'Загружаю модель вырезки (первый раз ~37 МБ, нужен интернет)…'); window.Person.onStatus = function (t) { if (t) $('#edProcInfo').textContent = t; };
     var frames = [], prev = null, i = 0;
-    return window.Person.ready().then(function step() {
+    return window.Person.warm().then(function step() {
       if (proc.cancel) throw new Error('cancel');
       if (i >= n) return;
-      return getRaw(i).then(function (raw) { return window.Person.frame(raw, prev); }).then(function (r) { prev = r.alpha; frames.push(r.cv); i++; pbar(i, n); return step(); });
+      return getRaw(i).then(function (raw) { window.Person.onStatus = null; return window.Person.frameBest(raw, prev); }).then(function (r) { prev = r.alpha; frames.push(r.cv); i++; pbar(i, n); return step(); });
     }).then(function () {
       /* общая рамка по всем кадрам, чтобы герой не дёргался */
       var w = frames[0].width, h = frames[0].height, x0 = w, y0 = h, x1 = 0, y1 = 0, colC = new Int32Array(w), rowC = new Int32Array(h);
@@ -815,7 +815,7 @@
       out.reduce(function (pr, cc, k) { return pr.then(function () { return new Promise(function (ok) { cc.toBlob(function (bl) { c.fb[k] = bl; ok(); }, 'image/png'); }); }); }, Promise.resolve()).then(function () { saveProject(true); });
       $('#edProc').hidden = true; paintTabs(); paintPane(); if (!playing) draw(); toast('Герой готов. Двигай и увеличивай его, он двигается как в видео');
     }).catch(function (e) {
-      $('#edProc').hidden = true;
+      $('#edProc').hidden = true; window.Person.onStatus = null;
       toast(e && e.message === 'cancel' ? 'Отменено' : e && e.message === 'nobody' ? 'Человека в видео не нашёл' : 'Не получилось вырезать (нужен интернет для первой загрузки модели)');
     });
   }
