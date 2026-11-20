@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '20.e172bc';
+  var APP_VERSION = '21.91eb8f';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -4111,6 +4111,10 @@ body.ed-open { overflow: hidden; }
       var pop = 1, offX = 0, offY = 0, walk = 0;
       var EN = 0.9, eIn = c.enter || 'pop', eOut = c.exit || 'fade';
       var bx = charBox(c);
+      if (c.grow && Math.abs(c.grow - 1) > 0.01) {
+        var gEnd = c.t1 > 0 ? c.t1 : total, gp = Math.max(0, Math.min(1, (t - c.t0) / Math.max(1, gEnd - c.t0))), gk = 1 + (c.grow - 1) * gp * gp * (3 - 2 * gp), gb = bx.cy + bx.h / 2;
+        bx = { w: bx.w * gk, h: bx.h * gk, cx: bx.cx, cy: gb - bx.h * gk / 2 };
+      }
       var u = (t - c.t0) / (eIn === 'pop' ? 0.4 : EN);
       if (u < 1 && c.t0 > 0.05) {
         if (eIn === 'pop') { var u1 = u - 1; pop = Math.max(0.01, 1 + 2.7 * u1 * u1 * u1 + 1.7 * u1 * u1); }
@@ -4270,7 +4274,7 @@ body.ed-open { overflow: hidden; }
   function mkChar(canvas, bid, m) {
     var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false, t0: 0, t1: 0, enter: 'pop', exit: 'fade', react: false, fx: 'none', say: '', sayS: 1, mouth: { on: false, x: 0.5, y: 0.16, s: 0.12 }, blend: Object.assign({}, BLEND_DEF) };
     if (m && m.blend) c.blend = Object.assign(c.blend, m.blend);
-    if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.enter = m.enter || 'pop'; c.exit = m.exit || 'fade'; c.react = !!m.react; c.fx = m.fx || 'none'; c.say = m.say || ''; c.sayS = m.sayS || 1; if (m.mouth) c.mouth = m.mouth; c.x = m.x; c.y = m.y; c.size = m.size; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
+    if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.enter = m.enter || 'pop'; c.exit = m.exit || 'fade'; c.react = !!m.react; c.fx = m.fx || 'none'; c.say = m.say || ''; c.sayS = m.sayS || 1; if (m.mouth) c.mouth = m.mouth; c.x = m.x; c.y = m.y; c.size = m.size; c.grow = m.grow || 1; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
     return c;
   }
   function addChars(list) {
@@ -4490,6 +4494,7 @@ body.ed-open { overflow: hidden; }
     p.appendChild(chipRow(ANIMS.map(function (a) { return { label: a[1], on: c.anim === a[0], fn: function () { c.anim = a[0]; saveProject(); paintPane(); } }; }), 'Движение'));
     p.appendChild(slider('Сила', 0.2, 2, 0.1, c.amt, function (v) { return f1(v) + '×'; }, function (v) { c.amt = v; saveProject(); }));
     p.appendChild(slider('Размер', 0.08, 0.9, 0.01, c.size, function (v) { return Math.round(v * 100) + '%'; }, function (v) { c.size = v; saveProject(); if (!playing) draw(); }));
+    p.appendChild(slider('Рост к концу', 0.3, 4, 0.05, c.grow || 1, function (v) { return Math.abs(v - 1) < 0.03 ? 'нет' : (v > 1 ? '↑ ' : '↓ ') + f1(v > 1 ? v : 1 / v) + '×'; }, function (v) { c.grow = Math.abs(v - 1) < 0.03 ? 1 : v; saveProject(); if (!playing) draw(); }));
     var tmax = Math.max(1, Math.round(total * 10) / 10);
     p.appendChild(slider('Появится', 0, tmax, 0.1, Math.min(c.t0, tmax), function (v) { return fmt(v); }, function (v) { c.t0 = v; if (c.t1 > 0 && c.t1 <= v) c.t1 = 0; saveProject(); if (!playing) draw(); }));
     p.appendChild(slider('Исчезнет', 0, tmax, 0.1, Math.min(c.t1, tmax), function (v) { return v < 0.05 ? 'в конце' : fmt(v); }, function (v) { c.t1 = v < 0.05 ? 0 : Math.max(v, c.t0 + 0.5); saveProject(); if (!playing) draw(); }));
@@ -4926,7 +4931,7 @@ body.ed-open { overflow: hidden; }
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, glue, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.grow || 1, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -4940,7 +4945,7 @@ body.ed-open { overflow: hidden; }
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, glue: glue, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
-      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
     var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
