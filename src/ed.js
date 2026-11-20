@@ -12,11 +12,12 @@
   /* ---------- state ---------- */
   var RATIOS = { '9:16': [9, 16], '1:1': [1, 1], '16:9': [16, 9] };
   var ratioKey = '9:16', quality = 720, W = 720, H = 1280;
-  var clips = [], titles = [], sel = -1, selT = -1, tab = 'clip', uid = 0, total = 0;
+  var clips = [], titles = [], sel = -1, selT = -1, tab = 'tpl', uid = 0, total = 0;
   var music = { id: null, title: '', el: null, node: null, gain: null, url: null, start: 0, vol: 0.8, fade: true, dur: 0, status: '' };
   var origVol = 1;
   var placing = false, chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
-  var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06;
+  var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0;
+  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
   var exporting = false, recorder = null, chunks = [], recMime = '', doneFile = null, doneUrl = null, cancelled = false;
@@ -209,12 +210,14 @@
 
   /* ---------- drawing ---------- */
   function srcSize(c) { return c.kind === 'image' ? [c.el.naturalWidth, c.el.naturalHeight] : [c.el.videoWidth, c.el.videoHeight]; }
-  function drawClip(c, idx, prog, alpha, dx) {
+  function drawClip(c, idx, prog, alpha, dx, zx) {
     if (!c || !c.ready) return;
     if (c.kind === 'video' && c.el.readyState < 2) return;
     var sz = srcSize(c), sw = sz[0], sh = sz[1]; if (!sw || !sh) return;
     var z = 1;
     if (c.kind === 'image' && kbAmt > 0) z = (idx % 2 === 0) ? 1 + kbAmt * prog : 1 + kbAmt * (1 - prog);
+    if (pulseAmt > 0) { var bp = beatPos(), fr = bp - Math.floor(bp); z *= 1 + pulseAmt * Math.pow(1 - fr, 3); }
+    if (zx) z *= zx;
     g.save();
     if (alpha < 1) g.globalAlpha = alpha;
     if (dx) g.translate(dx, 0);
@@ -909,12 +912,18 @@
     p.appendChild(el('div', 'ed-hint', 'Тащи героя пальцем прямо по кадру. Рот: нажми «Поставить рот» и коснись рта на рисунке героя. Ритм берётся из музыки ролика: выбери музыку на вкладке «Музыка».'));
   }
   function draw() {
+    if (pulseAmt > 0) ensureGrid();
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
     if (clips.length) {
       var i = indexAt(t), tr = trAt(i);
       if (tr) {
         var e = ease(tr.p);
         if (trans.type === 'slide') { drawClip(tr.a, tr.ai, prog(tr.a), 1, -e * W); drawClip(tr.b, tr.bi, prog(tr.b), 1, (1 - e) * W); }
+        else if (trans.type === 'flash') {
+          if (tr.p < 0.5) drawClip(tr.a, tr.ai, prog(tr.a), 1, 0); else drawClip(tr.b, tr.bi, prog(tr.b), 1, 0);
+          g.save(); g.globalAlpha = Math.sin(Math.PI * clamp(tr.p, 0, 1)) * 0.9; g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.restore();
+        }
+        else if (trans.type === 'zoom') { drawClip(tr.b, tr.bi, prog(tr.b), 1, 0, 1.25 - 0.25 * e); drawClip(tr.a, tr.ai, prog(tr.a), 1 - e, 0, 1 + 0.4 * e); }
         else { drawClip(tr.a, tr.ai, prog(tr.a), 1, 0); drawClip(tr.b, tr.bi, prog(tr.b), e, 0); }
       } else drawClip(clips[i], i, prog(clips[i]), 1, 0);
     }
@@ -961,7 +970,7 @@
   }
   function paintTabs() {
     var box = $('#edTabs'); box.textContent = '';
-    [['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['chars', 'Герои'], ['fx', 'Эффекты'], ['fmt', 'Формат']].forEach(function (x) {
+    [['tpl', 'Шаблоны'], ['clip', 'Клип'], ['music', 'Музыка'], ['titles', 'Титры'], ['chars', 'Герои'], ['fx', 'Эффекты'], ['fmt', 'Формат']].forEach(function (x) {
       var b = el('button', 'chip' + (tab === x[0] ? ' on' : ''), x[1]); b.type = 'button';
       b.addEventListener('click', function () { tab = x[0]; paintTabs(); paintPane(); });
       box.appendChild(b);
@@ -1185,7 +1194,7 @@
   /* ---------- tab: effects ---------- */
   function paneFx(p) {
     function T(k, label) { return { label: label, on: trans.type === k, fn: function () { trans.type = k; paintPane(); } }; }
-    p.appendChild(chipRow([T('none', 'Нет'), T('fade', 'Плавный'), T('slide', 'Сдвиг')], 'Переход'));
+    p.appendChild(chipRow([T('none', 'Нет'), T('fade', 'Плавный'), T('slide', 'Сдвиг'), T('flash', 'Вспышка'), T('zoom', 'Зум')], 'Переход'));
     p.appendChild(slider('Длительность', 0.2, 1.5, 0.1, trans.dur, function (x) { return f1(x) + ' с'; }, function (x) { trans.dur = x; }));
     p.appendChild(chipRow([
       { label: 'Только фото', on: trans.scope === 'photos', fn: function () { trans.scope = 'photos'; paintPane(); } },
@@ -1193,9 +1202,85 @@
     ], 'Где'));
     function K(v, label) { return { label: label, on: Math.abs(kbAmt - v) < 0.001, fn: function () { kbAmt = v; paintPane(); } }; }
     p.appendChild(chipRow([K(0, 'Нет'), K(0.06, 'Лёгкий'), K(0.12, 'Сильный')], 'Наезд'));
+    function PU(v, label) { return { label: label, on: Math.abs(pulseAmt - v) < 0.001, fn: function () { pulseAmt = v; paintPane(); } }; }
+    p.appendChild(chipRow([PU(0, 'Нет'), PU(0.04, 'Лёгкий'), PU(0.09, 'Сильный')], 'Пульс в такт'));
     p.appendChild(el('div', 'ed-hint', 'Переход проходит вокруг стыка: конец одного кадра растворяется в начале следующего, общая длина ролика не меняется. «Наезд» слегка приближает и отдаляет каждое фото по очереди, чтобы кадр жил.'));
     p.appendChild(el('div', 'ed-hint', '«Везде» добавляет переход и на стыках с видео. Там первый кадр следующего видео на время перехода стоит неподвижно, и это стоит проверить на настоящих клипах.'));
     p.appendChild(el('div', 'ed-hint', 'Чтобы посмотреть, перемотай к стыку и нажми ▶.'));
+  }
+
+
+  /* ---------- tab: templates (автомонтаж в один тап) ---------- */
+  var TPLS = [
+    { k: 'punch', label: '⚡ Панч', beats: 2, tr: { type: 'flash', dur: 0.24 }, kb: 0.06, pulse: 0.07, style: 'white', pos: 'mid' },
+    { k: 'zoom', label: '🔍 Зум', beats: 2, tr: { type: 'zoom', dur: 0.3 }, kb: 0.0, pulse: 0.09, style: 'accent', pos: 'top' },
+    { k: 'slide', label: '➡ Сдвиг', beats: 4, tr: { type: 'slide', dur: 0.4 }, kb: 0.0, pulse: 0.03, style: 'plate', pos: 'bottom' },
+    { k: 'smooth', label: '🌊 Плавный', beats: 8, tr: { type: 'fade', dur: 0.8 }, kb: 0.1, pulse: 0, style: 'white', pos: 'bottom' }
+  ];
+  function autoCut(tpl) {
+    if (!clips.length) { toast('Сначала добавь фото или видео кнопкой «+»'); return; }
+    if (clips.some(function (c) { return !c.ready; })) { toast('Файлы ещё читаются, подожди секунду'); return; }
+    if (tplBusy) return;
+    tplBusy = true; pause();
+    tplStatus = 'Считаю ритм и режу ролик…'; paintPane();
+    var run = function (r) {
+      try {
+        var hasM = !!music.id, P = r && r.bpm ? 60 / r.bpm : 0.5;
+        if (hasM && r && r.bpm) music.start = ((r.off % P) + P) % P;
+        var L = Math.max(0.5, tpl.beats * P);
+        while (L < 0.8) L += P;
+        var songLen = hasM ? (music.el && isFinite(music.el.duration) && music.el.duration > 0 ? music.el.duration : music.dur) : 0;
+        var T = tplLen || 0;
+        if (hasM && songLen) { var room = songLen - music.start; T = T ? Math.min(T, room) : room; }
+        if (!T) T = 30;
+        T = Math.max(4, T);
+        var base = clips.slice().map(function (c) { return { c: c, inp: c.inp, out: c.out, used: false }; });
+        var seq = [], acc = 0, round = 0, guard = 0;
+        while (acc < T - 0.01 && guard++ < 80) {
+          base.forEach(function (b) {
+            if (acc >= T - 0.01 || seq.length >= 70) return;
+            var o = b.c, n = b.used ? cloneClip(o) : o, d;
+            b.used = true;
+            if (o.kind === 'image') { n.dur = L; d = L; }
+            else {
+              var span = b.out - b.inp, segs = Math.max(1, Math.floor(span / L)), k = round % segs;
+              n.inp = span >= L ? b.inp + k * L : b.inp; n.out = span >= L ? n.inp + L : b.out; d = n.out - n.inp;
+            }
+            n.fit = 'fill'; seq.push(n); acc += d;
+          });
+          round++;
+        }
+        /* подрезаем хвост, чтобы ролик закончился ровно на нужной длине */
+        var a2 = 0, cut = seq.length, k2;
+        for (k2 = 0; k2 < seq.length; k2++) {
+          var dd = cd(seq[k2]);
+          if (a2 + dd >= T - 0.01) { cut = k2 + 1; var rest = Math.max(0.5, T - a2); if (seq[k2].kind === 'image') seq[k2].dur = rest; else seq[k2].out = Math.min(seq[k2].src, seq[k2].inp + rest); break; }
+          a2 += dd;
+        }
+        seq.length = cut;
+        clips.forEach(function (c) { if (seq.indexOf(c) < 0 && c.kind === 'video') { try { c.el.pause(); } catch (e) {} } });
+        clips = seq; sel = 0;
+        ratioKey = '9:16'; applySize();
+        trans = { type: tpl.tr.type, dur: tpl.tr.dur, scope: 'all' }; kbAmt = tpl.kb; pulseAmt = tpl.pulse;
+        if (tplText.trim()) titles = [{ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tpl.pos, size: 'L', style: tpl.style }]; else titles = [];
+        selT = -1; layout(); cur = -1; setTime(0); paintTl(); saveProject(true);
+        tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM.' : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
+      } catch (e) { tplStatus = 'Не получилось собрать: ' + (e && e.message ? e.message : 'ошибка'); }
+      tplBusy = false; paintPane();
+    };
+    if (music.id && window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(run, function () { run(null); });
+    else run(null);
+  }
+  function paneTpl(p) {
+    p.appendChild(el('div', 'ed-hint', 'Автомонтаж для Reels и TikTok: добавь фото или видео («+»), выбери музыку, подпиши ролик и нажми на стиль. Нарезка ляжет на ритм песни, формат 9:16.'));
+    p.appendChild(chipRow([{ label: music.id ? '♪ ' + music.title.slice(0, 26) : 'Выбрать музыку', on: !!music.id, fn: openPick }]));
+    var ta = el('input', 'search'); ta.type = 'text'; ta.maxLength = 60; ta.value = tplText; ta.placeholder = 'Надпись на ролике (по желанию)'; ta.setAttribute('autocomplete', 'off');
+    ta.addEventListener('input', function () { tplText = ta.value; });
+    p.appendChild(ta);
+    p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с'], [0, music.id ? 'Вся песня' : '30 с']].map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
+    p.appendChild(chipRow(TPLS.map(function (tp) { return { label: tp.label, on: false, fn: function () { autoCut(tp); } }; }), 'Стиль'));
+    if (tplStatus) p.appendChild(el('div', 'ed-hint', tplStatus));
+    p.appendChild(el('div', 'ed-hint', 'Панч: быстрые склейки со вспышкой и пульсом. Зум: наезды в такт. Сдвиг: спокойная смена кадров. Плавный: медленные растворения. После сборки всё можно донастроить на других вкладках и записать через «Экспорт».'));
   }
 
   /* ---------- tab: format ---------- */
@@ -1216,7 +1301,7 @@
 
   function paintPane() {
     var p = $('#edPane'); p.textContent = '';
-    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else if (tab === 'chars') paneChars(p); else if (tab === 'fx') paneFx(p); else paneFmt(p);
+    if (tab === 'clip') paneClip(p); else if (tab === 'music') paneMusic(p); else if (tab === 'titles') paneTitles(p); else if (tab === 'chars') paneChars(p); else if (tab === 'fx') paneFx(p); else if (tab === 'tpl') paneTpl(p); else paneFmt(p);
   }
 
   /* ---------- export ---------- */
@@ -1294,7 +1379,7 @@
     });
   }
   function sigOf() {
-    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, glue, titles, music.id, music.start, music.vol, music.fade,
+    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, pulseAmt, glue, titles, music.id, music.start, music.vol, music.fade,
       chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.grow || 1, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
@@ -1307,7 +1392,7 @@
     if (saving) { again = true; return; }
     var sig = sigOf(); if (!force && sig === lastSig) return;
     saving = true;
-    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, glue: glue, titles: titles,
+    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, pulseAmt: pulseAmt, glue: glue, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
       chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
@@ -1337,6 +1422,7 @@
         origVol = meta.origVol == null ? 1 : meta.origVol; titles = meta.titles || [];
         if (meta.trans) trans = { type: meta.trans.type || 'fade', dur: meta.trans.dur || 0.6, scope: meta.trans.scope || 'photos' };
         if (meta.kbAmt != null) kbAmt = meta.kbAmt;
+        if (meta.pulseAmt != null) pulseAmt = meta.pulseAmt;
         if (meta.glue) Object.keys(meta.glue).forEach(function (k) { glue[k] = meta.glue[k]; });
         meta.clips.forEach(function (m) {
           var b = blobs[m.bid]; if (!b) return;
