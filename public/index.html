@@ -484,7 +484,7 @@ body.ed-open { overflow: hidden; }
     <button class="ghost" id="setBtn" type="button">Настройки</button>
     <label class="btn" for="fileInput" id="addBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      Добавить музыку
+      Добавить файлы
     </label>
     </div>
     <input id="fileInput" class="file-in" type="file" accept="audio/*,video/*" multiple>
@@ -517,7 +517,7 @@ body.ed-open { overflow: hidden; }
 
   <div class="empty" id="empty" hidden>
     <h2>Здесь пока тихо</h2>
-    <p>Нажми «Добавить музыку» или перетащи сюда музыку (mp3, m4a, flac, wav) или видео (mp4, webm). Всё сохранится в этом браузере.</p>
+    <p>Нажми «Добавить файлы» или перетащи сюда музыку (mp3, m4a, flac, wav) или видео (mp4, webm). Всё сохранится в этом браузере.</p>
     <label class="btn" for="fileInput">Выбрать файлы</label>
   </div>
 
@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '24.9d21a9';
+  var APP_VERSION = '25.ece7bf';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3771,7 +3771,7 @@ body.ed-open { overflow: hidden; }
       v.onloadedmetadata = function () {
         c.src = isFinite(v.duration) ? v.duration : 0;
         if (saved) { c.inp = clamp(c.inp, 0, Math.max(0, c.src - 0.2)); c.out = clamp(c.out || c.src, c.inp + 0.2, Math.max(c.inp + 0.2, c.src)); }
-        else { c.inp = 0; c.out = c.src; }
+        else { c.inp = 0; c.out = c.cap && c.src > c.cap ? c.cap : c.src; }
         c.ready = true;
         layout(); paintTl(); paintPane();
         try { v.currentTime = saved ? c.inp : Math.min(0.1, c.src / 2); } catch (e) {}
@@ -4714,6 +4714,9 @@ body.ed-open { overflow: hidden; }
     var add = el('button', 'cl add', '+'); add.type = 'button'; add.setAttribute('aria-label', 'Добавить клип');
     add.addEventListener('click', function () { $('#edFile').click(); });
     box.appendChild(add);
+    var lib = el('button', 'cl add', '🎞'); lib.type = 'button'; lib.style.fontSize = '24px'; lib.setAttribute('aria-label', 'Добавить видео из библиотеки');
+    lib.addEventListener('click', function () { openPick('clip'); });
+    box.appendChild(lib);
     var cam = el('button', 'cl add', '📷'); cam.type = 'button'; cam.style.fontSize = '24px'; cam.setAttribute('aria-label', 'Снять фото камерой');
     cam.addEventListener('click', function () { openCam('clip'); });
     box.appendChild(cam);
@@ -4907,16 +4910,30 @@ body.ed-open { overflow: hidden; }
     p.appendChild(el('div', 'ed-hint', '«На всю песню» растягивает фото так, чтобы ролик шёл от старта до конца песни. Если фото мало, они пойдут по кругу, а склейки лягут на доли. «Под бит» только подравнивает нарезку, не меняя общую длину сильно.'));
     p.appendChild(el('div', 'ed-hint', '«Под бит» ставит старт песни на первую долю и подрезает клипы и фото до целого числа долей, чтобы склейки попадали в ритм.'));
   }
-  function openPick() { $('#edPickQ').value = ''; renderPick(); $('#edPick').hidden = false; }
+  var pickMode = 'music';
+  function openPick(mode) {
+    pickMode = mode === 'clip' ? 'clip' : 'music';
+    $('#edPickQ').value = ''; $('#edPickQ').placeholder = pickMode === 'clip' ? 'Найти видео' : 'Найти трек';
+    var st = $('#edPick strong'); if (st) st.textContent = pickMode === 'clip' ? 'Видео из библиотеки' : 'Музыка для ролика';
+    renderPick(); $('#edPick').hidden = false;
+  }
+  function addFromLibrary(x) {
+    if (!x || !x.blob) { toast('Файл не найден в библиотеке'); return; }
+    var ty = x.blob.type || x.mime || 'video/mp4', nm = x.fileName || ((x.title || 'video') + '.mp4');
+    var f; try { f = new File([x.blob], nm, { type: ty }); } catch (e) { f = x.blob; f.name = nm; }
+    var c = buildClip(f, URL.createObjectURL(f), newBid(), null);
+    if (x.duration && x.duration > 120) { c.cap = 30; toast('Длинное видео: взял первые 30 секунд, обрежь на вкладке «Клип»'); }
+    clips.push(c); if (sel < 0) sel = 0; layout(); paintTl(); paintPane();
+  }
   function renderPick() {
     var q = $('#edPickQ').value.trim().toLowerCase(), list = $('#edPickList'); list.textContent = '';
-    var items = MM.tracks().filter(function (x) { return !MM.isVid(x); });
+    var items = MM.tracks().filter(function (x) { return pickMode === 'clip' ? MM.isVid(x) : !MM.isVid(x); });
     if (q) items = items.filter(function (x) { return ((x.title || '') + ' ' + (x.artist || '')).toLowerCase().indexOf(q) !== -1; });
-    if (!items.length) { list.appendChild(el('div', 'hint2', q ? 'Ничего не найдено' : 'В библиотеке нет музыки')); return; }
+    if (!items.length) { list.appendChild(el('div', 'hint2', q ? 'Ничего не найдено' : pickMode === 'clip' ? 'В библиотеке нет видео' : 'В библиотеке нет музыки')); return; }
     items.slice(0, 300).forEach(function (x) {
       var b = el('button', 'pk'); b.type = 'button';
       var tx = el('div', 't'); tx.appendChild(el('b', '', x.title)); tx.appendChild(el('span', '', (x.artist || 'Без исполнителя') + (x.duration ? ' · ' + fmt(x.duration) : '')));
-      b.appendChild(tx); b.addEventListener('click', function () { $('#edPick').hidden = true; setMusic(x.id); });
+      b.appendChild(tx); b.addEventListener('click', function () { $('#edPick').hidden = true; if (pickMode === 'clip') addFromLibrary(x); else setMusic(x.id); });
       list.appendChild(b);
     });
   }
@@ -5151,7 +5168,7 @@ body.ed-open { overflow: hidden; }
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
       chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0, behind: c.behind ? 1 : 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
-    var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
+    var blobs = {}; clips.forEach(function (c) { if (c.blob && c.blob.size < 300e6) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
       var have = {}; keys.forEach(function (k) { have[k] = 1; });
       return idb('blobs', 'readwrite', function (st) {
