@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '22.9c4600';
+  var APP_VERSION = '23.9d1f68';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3001,7 +3001,30 @@ body.ed-open { overflow: hidden; }
       return { bpm: r.bpm, off: r.off };
     }).catch(function () { return null; });
   }
-  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob };
+  /* самый «живой» кусок песни: окно нужной длины с наибольшей громкостью, начало выровнено по такту */
+  var hookEn = {};
+  function secEnergy(buf) {
+    var c0 = buf.getChannelData(0), sr = buf.sampleRate, sec = Math.floor(buf.length / sr), e = new Float32Array(sec), q, i;
+    for (q = 0; q < sec; q++) { var sum = 0, b = q * sr, cnt = 0; for (i = b; i < b + sr; i += 4) { sum += c0[i] * c0[i]; cnt++; } e[q] = sum / cnt; }
+    return e;
+  }
+  function findHook(id, len) {
+    var tr = MM.find(id); if (!tr || tr.blob.size > 70e6 || !len) return Promise.resolve(null);
+    var pe = hookEn[id] ? Promise.resolve(hookEn[id]) : decode(tr.blob).then(function (buf) { return (hookEn[id] = secEnergy(buf)); });
+    return pe.then(function (e) {
+      var sec = e.length, L = Math.round(len);
+      if (sec <= L + 2) return { start: 0 };
+      var pre = new Float64Array(sec + 1), i; for (i = 0; i < sec; i++) pre[i + 1] = pre[i] + e[i];
+      var best = 0, bv = -1;
+      for (i = 0; i + L <= sec; i++) { var v = pre[i + L] - pre[i]; if (v > bv) { bv = v; best = i; } }
+      return analyzeTrack(id).then(function (r) {
+        var st = best;
+        if (r && r.bpm) { var bar = 4 * 60 / r.bpm; st = r.off + Math.round((best - r.off) / bar) * bar; while (st < 0) st += bar; while (st + len > sec && st - bar >= 0) st -= bar; }
+        return { start: Math.max(0, Math.min(st, Math.max(0, sec - len))) };
+      });
+    }).catch(function () { return null; });
+  }
+  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob, findHook: findHook };
 })();
 
 </script>
@@ -3653,7 +3676,7 @@ body.ed-open { overflow: hidden; }
   var origVol = 1;
   var placing = false, chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
   var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0;
-  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false;
+  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false, tplHook = true;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
   var exporting = false, recorder = null, chunks = [], recMime = '', doneFile = null, doneUrl = null, cancelled = false;
@@ -4859,10 +4882,11 @@ body.ed-open { overflow: hidden; }
     if (tplBusy) return;
     tplBusy = true; pause();
     tplStatus = 'Считаю ритм и режу ролик…'; paintPane();
-    var run = function (r) {
+    var run = function (r, hk) {
       try {
         var hasM = !!music.id, P = r && r.bpm ? 60 / r.bpm : 0.5;
         if (hasM && r && r.bpm) music.start = ((r.off % P) + P) % P;
+        if (hasM && hk && isFinite(hk.start)) music.start = hk.start;
         var L = Math.max(0.5, tpl.beats * P);
         while (L < 0.8) L += P;
         var songLen = hasM ? (music.el && isFinite(music.el.duration) && music.el.duration > 0 ? music.el.duration : music.dur) : 0;
@@ -4900,12 +4924,15 @@ body.ed-open { overflow: hidden; }
         trans = { type: tpl.tr.type, dur: tpl.tr.dur, scope: 'all' }; kbAmt = tpl.kb; pulseAmt = tpl.pulse;
         if (tplText.trim()) titles = [{ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tpl.pos, size: 'L', style: tpl.style }]; else titles = [];
         selT = -1; layout(); cur = -1; setTime(0); paintTl(); saveProject(true);
-        tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM.' : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
+        tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM' + (tplHook && tplLen > 0 && music.start > 1 ? ', песня с ' + fmt(music.start) + ' (самый живой кусок).' : '.') : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
       } catch (e) { tplStatus = 'Не получилось собрать: ' + (e && e.message ? e.message : 'ошибка'); }
       tplBusy = false; paintPane();
     };
-    if (music.id && window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(run, function () { run(null); });
-    else run(null);
+    if (music.id && window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(function (r) {
+      if (tplHook && tplLen > 0 && window.DJ.findHook) return window.DJ.findHook(music.id, tplLen).then(function (hk) { run(r, hk); });
+      run(r, null);
+    }, function () { run(null, null); });
+    else run(null, null);
   }
   function paneTpl(p) {
     p.appendChild(el('div', 'ed-hint', 'Автомонтаж для Reels и TikTok: добавь фото или видео («+»), выбери музыку, подпиши ролик и нажми на стиль. Нарезка ляжет на ритм песни, формат 9:16.'));
@@ -4914,6 +4941,7 @@ body.ed-open { overflow: hidden; }
     ta.addEventListener('input', function () { tplText = ta.value; });
     p.appendChild(ta);
     p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с'], [0, music.id ? 'Вся песня' : '30 с']].map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
+    if (music.id) p.appendChild(chipRow([{ label: tplHook ? '✓ Самый живой кусок песни' : 'Песня с начала', on: tplHook, fn: function () { tplHook = !tplHook; paintPane(); } }], 'Песня'));
     p.appendChild(chipRow(TPLS.map(function (tp) { return { label: tp.label, on: false, fn: function () { autoCut(tp); } }; }), 'Стиль'));
     if (tplStatus) p.appendChild(el('div', 'ed-hint', tplStatus));
     p.appendChild(el('div', 'ed-hint', 'Панч: быстрые склейки со вспышкой и пульсом. Зум: наезды в такт. Сдвиг: спокойная смена кадров. Плавный: медленные растворения. После сборки всё можно донастроить на других вкладках и записать через «Экспорт».'));

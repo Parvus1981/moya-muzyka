@@ -738,5 +738,28 @@
       return { bpm: r.bpm, off: r.off };
     }).catch(function () { return null; });
   }
-  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob };
+  /* самый «живой» кусок песни: окно нужной длины с наибольшей громкостью, начало выровнено по такту */
+  var hookEn = {};
+  function secEnergy(buf) {
+    var c0 = buf.getChannelData(0), sr = buf.sampleRate, sec = Math.floor(buf.length / sr), e = new Float32Array(sec), q, i;
+    for (q = 0; q < sec; q++) { var sum = 0, b = q * sr, cnt = 0; for (i = b; i < b + sr; i += 4) { sum += c0[i] * c0[i]; cnt++; } e[q] = sum / cnt; }
+    return e;
+  }
+  function findHook(id, len) {
+    var tr = MM.find(id); if (!tr || tr.blob.size > 70e6 || !len) return Promise.resolve(null);
+    var pe = hookEn[id] ? Promise.resolve(hookEn[id]) : decode(tr.blob).then(function (buf) { return (hookEn[id] = secEnergy(buf)); });
+    return pe.then(function (e) {
+      var sec = e.length, L = Math.round(len);
+      if (sec <= L + 2) return { start: 0 };
+      var pre = new Float64Array(sec + 1), i; for (i = 0; i < sec; i++) pre[i + 1] = pre[i] + e[i];
+      var best = 0, bv = -1;
+      for (i = 0; i + L <= sec; i++) { var v = pre[i + L] - pre[i]; if (v > bv) { bv = v; best = i; } }
+      return analyzeTrack(id).then(function (r) {
+        var st = best;
+        if (r && r.bpm) { var bar = 4 * 60 / r.bpm; st = r.off + Math.round((best - r.off) / bar) * bar; while (st < 0) st += bar; while (st + len > sec && st - bar >= 0) st -= bar; }
+        return { start: Math.max(0, Math.min(st, Math.max(0, sec - len))) };
+      });
+    }).catch(function () { return null; });
+  }
+  window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob, findHook: findHook };
 })();

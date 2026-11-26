@@ -1,5 +1,5 @@
 /* Service worker: the app opens even without internet. New versions are offered to the user, never forced mid-song. */
-const VERSION = '22.9c4600';
+const VERSION = '23.9d1f68';
 const CACHE = 'mm-' + VERSION;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 

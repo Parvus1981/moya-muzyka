@@ -17,7 +17,7 @@
   var origVol = 1;
   var placing = false, chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
   var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0;
-  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false;
+  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false, tplHook = true;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
   var exporting = false, recorder = null, chunks = [], recMime = '', doneFile = null, doneUrl = null, cancelled = false;
@@ -1223,10 +1223,11 @@
     if (tplBusy) return;
     tplBusy = true; pause();
     tplStatus = 'Считаю ритм и режу ролик…'; paintPane();
-    var run = function (r) {
+    var run = function (r, hk) {
       try {
         var hasM = !!music.id, P = r && r.bpm ? 60 / r.bpm : 0.5;
         if (hasM && r && r.bpm) music.start = ((r.off % P) + P) % P;
+        if (hasM && hk && isFinite(hk.start)) music.start = hk.start;
         var L = Math.max(0.5, tpl.beats * P);
         while (L < 0.8) L += P;
         var songLen = hasM ? (music.el && isFinite(music.el.duration) && music.el.duration > 0 ? music.el.duration : music.dur) : 0;
@@ -1264,12 +1265,15 @@
         trans = { type: tpl.tr.type, dur: tpl.tr.dur, scope: 'all' }; kbAmt = tpl.kb; pulseAmt = tpl.pulse;
         if (tplText.trim()) titles = [{ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tpl.pos, size: 'L', style: tpl.style }]; else titles = [];
         selT = -1; layout(); cur = -1; setTime(0); paintTl(); saveProject(true);
-        tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM.' : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
+        tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM' + (tplHook && tplLen > 0 && music.start > 1 ? ', песня с ' + fmt(music.start) + ' (самый живой кусок).' : '.') : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
       } catch (e) { tplStatus = 'Не получилось собрать: ' + (e && e.message ? e.message : 'ошибка'); }
       tplBusy = false; paintPane();
     };
-    if (music.id && window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(run, function () { run(null); });
-    else run(null);
+    if (music.id && window.DJ && window.DJ.analyzeTrack) window.DJ.analyzeTrack(music.id).then(function (r) {
+      if (tplHook && tplLen > 0 && window.DJ.findHook) return window.DJ.findHook(music.id, tplLen).then(function (hk) { run(r, hk); });
+      run(r, null);
+    }, function () { run(null, null); });
+    else run(null, null);
   }
   function paneTpl(p) {
     p.appendChild(el('div', 'ed-hint', 'Автомонтаж для Reels и TikTok: добавь фото или видео («+»), выбери музыку, подпиши ролик и нажми на стиль. Нарезка ляжет на ритм песни, формат 9:16.'));
@@ -1278,6 +1282,7 @@
     ta.addEventListener('input', function () { tplText = ta.value; });
     p.appendChild(ta);
     p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с'], [0, music.id ? 'Вся песня' : '30 с']].map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
+    if (music.id) p.appendChild(chipRow([{ label: tplHook ? '✓ Самый живой кусок песни' : 'Песня с начала', on: tplHook, fn: function () { tplHook = !tplHook; paintPane(); } }], 'Песня'));
     p.appendChild(chipRow(TPLS.map(function (tp) { return { label: tp.label, on: false, fn: function () { autoCut(tp); } }; }), 'Стиль'));
     if (tplStatus) p.appendChild(el('div', 'ed-hint', tplStatus));
     p.appendChild(el('div', 'ed-hint', 'Панч: быстрые склейки со вспышкой и пульсом. Зум: наезды в такт. Сдвиг: спокойная смена кадров. Плавный: медленные растворения. После сборки всё можно донастроить на других вкладках и записать через «Экспорт».'));
