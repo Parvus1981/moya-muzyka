@@ -337,5 +337,25 @@
       og.putImageData(id, 0, 0); return { cv: out, alpha: raw0 };
     }, function () { modnetBad = true; return frame(src, prev); });
   }
-  window.Person = { cut: cut, cutSelfie: cutSelfie, cutModnet: cutModnet, frame: frame, frameBest: frameBest, warm: warm, ready: init, core: cutCore, onStatus: null, lastEngine: '' };
+  /* только маска людей кадра (0..255), без вырезки: для того, чтобы прятать героя за людьми в клипе */
+  function maskOnly(src) {
+    return init().then(function (sg) {
+      var w = src.width, h = src.height;
+      return new Promise(function (ok, bad) {
+        var to = setTimeout(function () { pending = null; bad(new Error('timeout')); }, 20000);
+        pending = function (r) {
+          clearTimeout(to);
+          try {
+            var mc = document.createElement('canvas'); mc.width = w; mc.height = h; var mg = mc.getContext('2d', { willReadFrequently: true });
+            mg.drawImage(r.segmentationMask, 0, 0, w, h);
+            var md = mg.getImageData(0, 0, w, h).data, N = w * h, out = new Uint8Array(N), i;
+            for (i = 0; i < N; i++) out[i] = Math.round(smooth(0.3, 0.6, md[i * 4] / 255) * 255);
+            ok(out);
+          } catch (e) { bad(e); }
+        };
+        sg.send({ image: src }).catch(function (e) { clearTimeout(to); pending = null; bad(e); });
+      });
+    });
+  }
+  window.Person = { maskOnly: maskOnly, cut: cut, cutSelfie: cutSelfie, cutModnet: cutModnet, frame: frame, frameBest: frameBest, warm: warm, ready: init, core: cutCore, onStatus: null, lastEngine: '' };
 })();

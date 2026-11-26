@@ -210,7 +210,7 @@
 
   /* ---------- drawing ---------- */
   function srcSize(c) { return c.kind === 'image' ? [c.el.naturalWidth, c.el.naturalHeight] : [c.el.videoWidth, c.el.videoHeight]; }
-  function drawClip(c, idx, prog, alpha, dx, zx) {
+  function drawClip(c, idx, prog, alpha, dx, zx, srcOv) {
     if (!c || !c.ready) return;
     if (c.kind === 'video' && c.el.readyState < 2) return;
     var sz = srcSize(c), sw = sz[0], sh = sz[1]; if (!sw || !sh) return;
@@ -221,17 +221,20 @@
     g.save();
     if (alpha < 1) g.globalAlpha = alpha;
     if (dx) g.translate(dx, 0);
+    var im0 = srcOv || c.el;
     if (c.fit === 'fit') {
       var k0 = Math.max(bg.width / sw, bg.height / sh);
+      if (!srcOv) {
       bgg.drawImage(c.el, (bg.width - sw * k0) / 2, (bg.height - sh * k0) / 2, sw * k0, sh * k0);
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
       g.drawImage(bg, 0, 0, W, H);
       g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, 0, W, H);
+      }
       var k = Math.min(W / sw, H / sh) * z;
-      g.drawImage(c.el, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
+      g.drawImage(im0, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
     } else {
       var kk = Math.max(W / sw, H / sh) * z;
-      g.drawImage(c.el, (W - sw * kk) / 2, (H - sh * kk) / 2, sw * kk, sh * kk);
+      g.drawImage(im0, (W - sw * kk) / 2, (H - sh * kk) / 2, sw * kk, sh * kk);
     }
     g.restore();
   }
@@ -641,7 +644,7 @@
   function mkChar(canvas, bid, m) {
     var c = { bid: bid, cv: canvas, img: canvas, x: 0.5, y: 0.7, size: 0.3, anim: 'dance', amt: 1, flip: false, t0: 0, t1: 0, enter: 'pop', exit: 'fade', react: false, fx: 'none', say: '', sayS: 1, mouth: { on: false, x: 0.5, y: 0.16, s: 0.12 }, blend: Object.assign({}, BLEND_DEF) };
     if (m && m.blend) c.blend = Object.assign(c.blend, m.blend);
-    if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.enter = m.enter || 'pop'; c.exit = m.exit || 'fade'; c.react = !!m.react; c.fx = m.fx || 'none'; c.say = m.say || ''; c.sayS = m.sayS || 1; if (m.mouth) c.mouth = m.mouth; c.x = m.x; c.y = m.y; c.size = m.size; c.grow = m.grow || 1; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; }
+    if (m) { c.t0 = m.t0 || 0; c.t1 = m.t1 || 0; c.enter = m.enter || 'pop'; c.exit = m.exit || 'fade'; c.react = !!m.react; c.fx = m.fx || 'none'; c.say = m.say || ''; c.sayS = m.sayS || 1; if (m.mouth) c.mouth = m.mouth; c.x = m.x; c.y = m.y; c.size = m.size; c.grow = m.grow || 1; c.anim = m.anim; c.amt = m.amt; c.flip = !!m.flip; c.behind = !!m.behind; }
     return c;
   }
   function addChars(list) {
@@ -798,6 +801,69 @@
   var proc = { cancel: false };
   function pbar(i, n, txt) { $('#edProcBar').style.width = (n ? i / n * 100 : 0).toFixed(1) + '%'; $('#edProcInfo').textContent = txt || ('Кадр ' + i + ' из ' + n); }
   function seekTo(v, tm) { return new Promise(function (ok) { var done = false; function fin() { if (!done) { done = true; v.removeEventListener('seeked', fin); ok(); } } v.addEventListener('seeked', fin); v.currentTime = tm; setTimeout(fin, 3000); }); }
+
+  /* ---------- герой за людьми в клипе: маски людей по кадрам клипа ---------- */
+  var pm = {}, mskC = document.createElement('canvas'), mskG = mskC.getContext('2d'), frC = document.createElement('canvas'), frG = frC.getContext('2d'), mkc = document.createElement('canvas'), mkg = mkc.getContext('2d'), mkKey = '';
+  var PM_FPS = 10, PM_MAXS = 60;
+  function maskClipFor(c) {
+    var v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.src = c.url;
+    return new Promise(function (ok, bad) { v.onloadedmetadata = ok; v.onerror = function () { bad(new Error('video')); }; setTimeout(function () { bad(new Error('video')); }, 15000); }).then(function () {
+      var vw = v.videoWidth, vh = v.videoHeight, k = 256 / Math.max(vw, vh), w = Math.max(16, Math.round(vw * k)), h = Math.max(16, Math.round(vh * k));
+      var dur = Math.min(isFinite(v.duration) ? v.duration : c.src, PM_MAXS), n = Math.max(1, Math.floor(dur * PM_FPS)), frames = [], prev = null, i = 0;
+      var cs = document.createElement('canvas'); cs.width = w; cs.height = h; var cg = cs.getContext('2d', { willReadFrequently: true });
+      return window.Person.ready().then(function step() {
+        if (proc.cancel) throw new Error('cancel');
+        if (i >= n) return;
+        return seekTo(v, i / PM_FPS).then(function () {
+          cg.drawImage(v, 0, 0, w, h);
+          return window.Person.maskOnly(cs);
+        }).then(function (m) {
+          if (prev) for (var q = 0; q < m.length; q++) m[q] = (m[q] * 0.6 + prev[q] * 0.4) | 0;
+          prev = m; frames.push(m); i++;
+          if (i % 3 === 0 || i === n) pbar(i, n, 'Маска людей: кадр ' + i + ' из ' + n);
+          return step();
+        });
+      }).then(function () { pm[c.bid] = { fps: PM_FPS, n: n, w: w, h: h, frames: frames }; try { v.removeAttribute('src'); v.load(); } catch (e) {} });
+    });
+  }
+  function needMasks() {
+    var seen = {}, out = [];
+    clips.forEach(function (c) { if (c.kind === 'video' && c.url && !pm[c.bid] && !seen[c.bid]) { seen[c.bid] = 1; out.push(c); } });
+    return out;
+  }
+  function enableBehind(c) {
+    if (!clips.some(function (x) { return x.kind === 'video'; })) { toast('Нужен видеоклип с людьми'); return; }
+    var need = needMasks();
+    if (!need.length) { c.behind = true; saveProject(true); paintPane(); if (!playing) draw(); return; }
+    proc.cancel = false; pause();
+    var st = $('#edProc strong'), oldT = st ? st.textContent : ''; if (st) st.textContent = 'Ищу людей в клипе';
+    $('#edProc').hidden = false; pbar(0, 1, 'Загружаю модель…');
+    need.reduce(function (pr, cl) { return pr.then(function () { return maskClipFor(cl); }); }, Promise.resolve()).then(function () {
+      c.behind = true; saveProject(true); toast('Готово: люди из клипа закрывают героя');
+    }).catch(function (e) { toast(e && e.message === 'cancel' ? 'Отменено' : 'Не получилось найти людей в клипе'); }).then(function () {
+      if (st) st.textContent = oldT; $('#edProc').hidden = true; paintPane(); if (!playing) draw();
+    });
+  }
+  function drawOcclusion() {
+    if (!chars.length || !chars.some(function (x) { return x.behind; })) return;
+    var i = indexAt(t), cl = clips[i]; if (!cl || cl.kind !== 'video' || trAt(i)) return;
+    var m = pm[cl.bid]; if (!m) return;
+    var fi = Math.floor((cl.inp + (t - cl.start)) * m.fps), fr = m.frames[fi]; if (!fr) return;
+    var key = cl.bid + ':' + fi;
+    if (mkc.width !== m.w || mkc.height !== m.h) { mkc.width = m.w; mkc.height = m.h; mkKey = ''; }
+    if (key !== mkKey) {
+      var id = mkg.createImageData(m.w, m.h), d = id.data, q, N = m.w * m.h;
+      for (q = 0; q < N; q++) { d[q * 4] = 255; d[q * 4 + 1] = 255; d[q * 4 + 2] = 255; d[q * 4 + 3] = fr[q]; }
+      mkg.putImageData(id, 0, 0); mkKey = key;
+    }
+    if (mskC.width !== W || mskC.height !== H) { mskC.width = W; mskC.height = H; frC.width = W; frC.height = H; }
+    var sv = g;
+    mskG.clearRect(0, 0, W, H); g = mskG; drawClip(cl, i, prog(cl), 1, 0, 0, mkc);
+    frG.globalCompositeOperation = 'source-over'; frG.clearRect(0, 0, W, H); g = frG; drawClip(cl, i, prog(cl), 1, 0);
+    g = sv;
+    frG.globalCompositeOperation = 'destination-in'; frG.drawImage(mskC, 0, 0); frG.globalCompositeOperation = 'source-over';
+    g.drawImage(frC, 0, 0);
+  }
   function makeVideoHero(n, getRaw) {
     proc.cancel = false; $('#edProc').hidden = false; pbar(0, n, 'Загружаю модель вырезки (первый раз ~37 МБ, нужен интернет)…'); window.Person.onStatus = function (t) { if (t) $('#edProcInfo').textContent = t; };
     var frames = [], prev = null, i = 0;
@@ -873,6 +939,10 @@
     p.appendChild(chipRow([['pop', 'Выскочит'], ['left', 'Слева'], ['right', 'Справа'], ['top', 'Сверху']].map(function (a) { return { label: a[1], on: (c.enter || 'pop') === a[0], fn: function () { c.enter = a[0]; saveProject(); paintPane(); if (!playing) draw(); } }; }), 'Вход'));
     p.appendChild(chipRow([['fade', 'Исчезнет'], ['left', 'Уйдёт влево'], ['right', 'Уйдёт вправо'], ['down', 'Уйдёт вниз']].map(function (a) { return { label: a[1], on: (c.exit || 'fade') === a[0], fn: function () { c.exit = a[0]; saveProject(); paintPane(); if (!playing) draw(); } }; }), 'Уход'));
     p.appendChild(chipRow([{ label: 'Прыгает на каждое новое фото', on: !!c.react, fn: function () { c.react = !c.react; saveProject(); paintPane(); } }], 'Реакция'));
+    var lost = c.behind && needMasks().length > 0;
+    p.appendChild(chipRow([{ label: lost ? 'Пересчитать маску людей' : (c.behind ? 'За людьми в клипе: вкл' : 'За людьми в клипе: выкл'), on: !!c.behind && !lost, fn: function () { if (c.behind && !lost) { c.behind = false; saveProject(true); paintPane(); if (!playing) draw(); } else enableBehind(c); } }], 'Глубина'));
+    if (lost) p.appendChild(el('div', 'ed-hint', 'После перезапуска маски людей пропали: нажми «Пересчитать маску людей» (1–2 минуты на 30 секунд клипа).'));
+    else if (!c.behind) p.appendChild(el('div', 'ed-hint', '«За людьми в клипе»: телефон найдёт людей в видеоклипе, и они закроют героя, будто он стоит позади них. Считается один раз на каждый клип, примерно минута на 30 секунд видео.'));
     p.appendChild(chipRow([['none', 'Нет'], ['hearts', 'Сердечки'], ['stars', 'Звёздочки'], ['confetti', 'Конфетти'], ['notes', 'Ноты'], ['bubbles', 'Пузыри'], ['sparkle', 'Блёстки'], ['aura', 'Аура']].map(function (a) { return { label: a[1], on: (c.fx || 'none') === a[0], fn: function () { c.fx = a[0]; saveProject(); paintPane(); } }; }), 'Эффект'));
     var bl = c.blend, blSet = function (o) { Object.keys(o).forEach(function (k) { bl[k] = o[k]; }); bl.on = true; saveProject(); paintPane(); if (!playing) draw(); };
     p.appendChild(chipRow([
@@ -928,6 +998,7 @@
       } else drawClip(clips[i], i, prog(clips[i]), 1, 0);
     }
     drawChars();
+    drawOcclusion();
     drawGlue();
     drawTitles();
   }
@@ -1385,7 +1456,7 @@
   }
   function sigOf() {
     return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, pulseAmt, glue, titles, music.id, music.start, music.vol, music.fade,
-      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.grow || 1, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
+      chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.grow || 1, c.behind ? 1 : 0, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
   function projectMB() {
@@ -1399,7 +1470,7 @@
     saving = true;
     var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, pulseAmt: pulseAmt, glue: glue, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
-      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0 }; }),
+      chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0, behind: c.behind ? 1 : 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
     var blobs = {}; clips.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; }); chars.forEach(function (c) { if (c.blob) blobs[c.bid] = c.blob; if (c.fb) c.fb.forEach(function (fb, i) { if (fb) blobs[c.bid + '_' + i] = fb; }); });
     idb('blobs', 'readonly', function (st) { return st.getAllKeys(); }).then(function (keys) {
