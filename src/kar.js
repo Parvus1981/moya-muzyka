@@ -20,6 +20,7 @@
       body = s.replace(re, '').replace(/\s+/g, ' ').trim();
       if (!body) return;
       if (/^(ar|ti|al|by|offset|length|re|ve):/i.test(body)) return;
+      if (/^[\[(]?\s*(куплет|припев|бридж|проигрыш|вступление|окончание|соло|строфа|verse|chorus|bridge|intro|outro|pre-?chorus|hook)\s*\d*\s*[\])]?\s*:?$/i.test(body)) return;
       if (stamps.length) stamps.forEach(function (t) { lines.push({ t: t, w: body }); });
       else lines.push({ t: null, w: body });
     });

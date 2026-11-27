@@ -2268,7 +2268,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '31.8b3efa';
+  var APP_VERSION = '32.ae8572';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3177,6 +3177,7 @@ body.ed-open { overflow: hidden; }
       body = s.replace(re, '').replace(/\s+/g, ' ').trim();
       if (!body) return;
       if (/^(ar|ti|al|by|offset|length|re|ve):/i.test(body)) return;
+      if (/^[\[(]?\s*(куплет|припев|бридж|проигрыш|вступление|окончание|соло|строфа|verse|chorus|bridge|intro|outro|pre-?chorus|hook)\s*\d*\s*[\])]?\s*:?$/i.test(body)) return;
       if (stamps.length) stamps.forEach(function (t) { lines.push({ t: t, w: body }); });
       else lines.push({ t: null, w: body });
     });
