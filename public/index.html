@@ -2148,7 +2148,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '25.ece7bf';
+  var APP_VERSION = '26.2f3c70';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3696,7 +3696,7 @@ body.ed-open { overflow: hidden; }
   var origVol = 1;
   var placing = false, chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
   var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0;
-  var tplLen = 30, tplText = '', tplStatus = '', tplBusy = false, tplHook = true;
+  var tplLen = 30, tplText = '', tplCta = '', tplTheme = null, tplStatus = '', tplBusy = false, tplHook = true;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
   var exporting = false, recorder = null, chunks = [], recMime = '', doneFile = null, doneUrl = null, cancelled = false;
@@ -3932,6 +3932,24 @@ body.ed-open { overflow: hidden; }
     return out;
   }
   function accent() { try { return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#ffb224'; } catch (e) { return '#ffb224'; } }
+  function easeBack(p) { p = clamp(p, 0, 1); var c1 = 1.70158; return 1 + (c1 + 1) * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); }
+  function wordTitle(tt, lines, y0, lh, fillC) {
+    var an = tt.anim, words = [], sp = g.measureText(' ').width;
+    lines.forEach(function (l, i) {
+      var ws = l.split(' ').filter(Boolean), wd = ws.map(function (w) { return g.measureText(w).width; }), tw = sp * Math.max(0, ws.length - 1), x, j;
+      wd.forEach(function (x0) { tw += x0; }); x = (W - tw) / 2;
+      for (j = 0; j < ws.length; j++) { words.push({ w: ws[j], x: x, wd: wd[j], y: y0 + i * lh }); x += wd[j] + sp; }
+    });
+    var n = words.length; if (!n) return;
+    var e = t - tt.start, step = Math.max(0.18, Math.min(0.45, (tt.dur * 0.6) / n)), k = Math.min(n - 1, Math.floor(e / step));
+    function dw(wo, sc, col) { g.save(); g.translate(wo.x + wo.wd / 2, wo.y); g.scale(sc, sc); g.textAlign = 'center'; g.strokeText(wo.w, 0, 0); g.fillStyle = col; g.fillText(wo.w, 0, 0); g.restore(); }
+    words.forEach(function (wo, i) {
+      if (an === 'pop') dw(wo, Math.max(0.01, easeBack(e / 0.35)), fillC);
+      else if (an === 'words') { var ew = e - i * step; if (ew >= 0) dw(wo, Math.max(0.01, easeBack(ew / 0.22)), fillC); }
+      else if (an === 'karaoke') { var cur = i === k; dw(wo, cur ? 1.14 : 1, cur ? accent() : fillC); }
+      else dw(wo, 1, fillC);
+    });
+  }
   function drawTitles() {
     titles.forEach(function (tt) {
       if (!tt.text || t < tt.start || t > tt.start + tt.dur) return;
@@ -3952,10 +3970,13 @@ body.ed-open { overflow: hidden; }
         g.fillStyle = '#111';
         lines.forEach(function (l, i) { g.fillText(l, W / 2, y0 + i * lh); });
       } else {
-        g.fillStyle = tt.style === 'accent' ? accent() : '#fff';
-        g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = fs * 0.14; g.lineJoin = 'round';
+        var fillC = tt.style === 'accent' ? accent() : tt.style === 'yellow' ? '#ffe14a' : '#fff', heavy = tt.style === 'tiktok' || tt.style === 'yellow';
+        g.fillStyle = fillC;
+        g.strokeStyle = heavy ? '#000' : 'rgba(0,0,0,0.7)'; g.lineWidth = fs * (heavy ? 0.24 : 0.14); g.lineJoin = 'round';
         g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = fs * 0.2;
-        lines.forEach(function (l, i) { g.strokeText(l, W / 2, y0 + i * lh); g.fillText(l, W / 2, y0 + i * lh); });
+        if (heavy) g.font = '800 ' + fs + 'px Inter, "Space Grotesk", system-ui, sans-serif';
+        if ((tt.anim || 'fade') === 'fade') lines.forEach(function (l, i) { g.strokeText(l, W / 2, y0 + i * lh); g.fillText(l, W / 2, y0 + i * lh); });
+        else wordTitle(tt, lines, y0, lh, fillC);
       }
       g.restore();
     });
@@ -4954,7 +4975,8 @@ body.ed-open { overflow: hidden; }
     p.appendChild(slider('Длится', 0.5, 12, 0.1, tt.dur, function (x) { return f1(x) + ' с'; }, function (x) { tt.dur = x; }));
     p.appendChild(chipRow([{ label: 'Верх', on: tt.pos === 'top', fn: function () { tt.pos = 'top'; paintPane(); } }, { label: 'Центр', on: tt.pos === 'mid', fn: function () { tt.pos = 'mid'; paintPane(); } }, { label: 'Низ', on: tt.pos === 'bottom', fn: function () { tt.pos = 'bottom'; paintPane(); } }], 'Место'));
     p.appendChild(chipRow([{ label: 'Мелкий', on: tt.size === 'S', fn: function () { tt.size = 'S'; paintPane(); } }, { label: 'Средний', on: tt.size === 'M', fn: function () { tt.size = 'M'; paintPane(); } }, { label: 'Крупный', on: tt.size === 'L', fn: function () { tt.size = 'L'; paintPane(); } }], 'Размер'));
-    p.appendChild(chipRow([{ label: 'Белый', on: tt.style === 'white', fn: function () { tt.style = 'white'; paintPane(); } }, { label: 'Цвет темы', on: tt.style === 'accent', fn: function () { tt.style = 'accent'; paintPane(); } }, { label: 'Плашка', on: tt.style === 'plate', fn: function () { tt.style = 'plate'; paintPane(); } }], 'Стиль'));
+    p.appendChild(chipRow([{ label: 'Белый', on: tt.style === 'white', fn: function () { tt.style = 'white'; paintPane(); } }, { label: 'Цвет темы', on: tt.style === 'accent', fn: function () { tt.style = 'accent'; paintPane(); } }, { label: 'Плашка', on: tt.style === 'plate', fn: function () { tt.style = 'plate'; paintPane(); } }, { label: 'TikTok', on: tt.style === 'tiktok', fn: function () { tt.style = 'tiktok'; paintPane(); } }, { label: 'Жёлтый', on: tt.style === 'yellow', fn: function () { tt.style = 'yellow'; paintPane(); } }], 'Стиль'));
+    p.appendChild(chipRow([['fade', 'Плавно'], ['words', 'По словам'], ['pop', 'Поп'], ['karaoke', 'Караоке']].map(function (a) { return { label: a[1], on: (tt.anim || 'fade') === a[0], fn: function () { tt.anim = a[0]; setTime(tt.start + Math.min(1, tt.dur / 2)); paintPane(); } }; }), 'Появление'));
     p.appendChild(chipRow([{ label: 'Удалить титр', fn: function () { titles.splice(selT, 1); selT = Math.min(selT, titles.length - 1); paintPane(); } }]));
   }
 
@@ -4983,6 +5005,12 @@ body.ed-open { overflow: hidden; }
     { k: 'zoom', label: '🔍 Зум', beats: 2, tr: { type: 'zoom', dur: 0.3 }, kb: 0.0, pulse: 0.09, style: 'accent', pos: 'top' },
     { k: 'slide', label: '➡ Сдвиг', beats: 4, tr: { type: 'slide', dur: 0.4 }, kb: 0.0, pulse: 0.03, style: 'plate', pos: 'bottom' },
     { k: 'smooth', label: '🌊 Плавный', beats: 8, tr: { type: 'fade', dur: 0.8 }, kb: 0.1, pulse: 0, style: 'white', pos: 'bottom' }
+  ];
+  var THEMES = [
+    { k: 'auto', label: '🚗 Авто', hook: 'Тачка мечты', cta: 'Подробности в профиле', style: 'tiktok', anim: 'words', pos: 'mid', tip: 'Панч или Зум' },
+    { k: 'cafe', label: '☕ Заведение', hook: 'Сегодня в меню', cta: 'Ждём вас в гости!', style: 'plate', anim: 'fade', pos: 'bottom', tip: 'Плавный' },
+    { k: 'shop', label: '🛍 Магазин', hook: 'Новинка!', cta: 'Заказать: ссылка в профиле', style: 'yellow', anim: 'pop', pos: 'top', tip: 'Зум или Панч' },
+    { k: 'bday', label: '🎂 День рождения', hook: 'С днём рождения!', cta: 'Обнимаем и любим', style: 'accent', anim: 'pop', pos: 'mid', tip: 'Плавный или Сдвиг' }
   ];
   function autoCut(tpl) {
     if (!clips.length) { toast('Сначала добавь фото или видео кнопкой «+»'); return; }
@@ -5030,7 +5058,10 @@ body.ed-open { overflow: hidden; }
         clips = seq; sel = 0;
         ratioKey = '9:16'; applySize();
         trans = { type: tpl.tr.type, dur: tpl.tr.dur, scope: 'all' }; kbAmt = tpl.kb; pulseAmt = tpl.pulse;
-        if (tplText.trim()) titles = [{ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tpl.pos, size: 'L', style: tpl.style }]; else titles = [];
+        var th = tplTheme, tStyle = th ? th.style : tpl.style, tAnim = th ? th.anim : 'fade', tPos = th ? th.pos : tpl.pos;
+        titles = [];
+        if (tplText.trim()) titles.push({ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tPos, size: 'L', style: tStyle, anim: tAnim });
+        if (tplCta.trim() && T > 5) titles.push({ text: tplCta.trim(), start: Math.max(1.5, T - 3), dur: 2.7, pos: 'bottom', size: 'M', style: tStyle === 'accent' ? 'accent' : (tStyle === 'plate' ? 'plate' : tStyle), anim: th ? th.anim : 'fade' });
         selT = -1; layout(); cur = -1; setTime(0); paintTl(); saveProject(true);
         tplStatus = 'Готово: «' + tpl.label.replace(/^\S+\s/, '') + '», ' + clips.length + ' кадров, ' + fmt(total) + (hasM ? ', склейки на долях ' + Math.round(60 / P) + ' BPM' + (tplHook && tplLen > 0 && music.start > 1 ? ', песня с ' + fmt(music.start) + ' (самый живой кусок).' : '.') : '. Музыки нет: темп 120, выбери трек на вкладке «Музыка» и нажми стиль ещё раз.') + ' Нажми ▶, чтобы посмотреть.';
       } catch (e) { tplStatus = 'Не получилось собрать: ' + (e && e.message ? e.message : 'ошибка'); }
@@ -5045,9 +5076,14 @@ body.ed-open { overflow: hidden; }
   function paneTpl(p) {
     p.appendChild(el('div', 'ed-hint', 'Автомонтаж для Reels и TikTok: добавь фото или видео («+»), выбери музыку, подпиши ролик и нажми на стиль. Нарезка ляжет на ритм песни, формат 9:16.'));
     p.appendChild(chipRow([{ label: music.id ? '♪ ' + music.title.slice(0, 26) : 'Выбрать музыку', on: !!music.id, fn: openPick }]));
-    var ta = el('input', 'search'); ta.type = 'text'; ta.maxLength = 60; ta.value = tplText; ta.placeholder = 'Надпись на ролике (по желанию)'; ta.setAttribute('autocomplete', 'off');
+    p.appendChild(chipRow(THEMES.map(function (th) { return { label: th.label, on: tplTheme === th, fn: function () { tplTheme = th; tplText = th.hook; tplCta = th.cta; paintPane(); } }; }).concat([{ label: 'Без темы', on: !tplTheme, fn: function () { tplTheme = null; paintPane(); } }]), 'Тема'));
+    if (tplTheme) p.appendChild(el('div', 'ed-hint', 'Тема «' + tplTheme.label.replace(/^\S+\s/, '') + '»: надписи подставлены, поправь их под себя. Лучше всего подойдёт стиль: ' + tplTheme.tip + '.'));
+    var ta = el('input', 'search'); ta.type = 'text'; ta.maxLength = 60; ta.value = tplText; ta.placeholder = 'Надпись в начале (по желанию)'; ta.setAttribute('autocomplete', 'off');
     ta.addEventListener('input', function () { tplText = ta.value; });
     p.appendChild(ta);
+    var tb = el('input', 'search'); tb.type = 'text'; tb.maxLength = 60; tb.value = tplCta; tb.placeholder = 'Призыв в конце (по желанию)'; tb.setAttribute('autocomplete', 'off');
+    tb.addEventListener('input', function () { tplCta = tb.value; });
+    p.appendChild(tb);
     p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с'], [0, music.id ? 'Вся песня' : '30 с']].map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
     if (music.id) p.appendChild(chipRow([{ label: tplHook ? '✓ Самый живой кусок песни' : 'Песня с начала', on: tplHook, fn: function () { tplHook = !tplHook; paintPane(); } }], 'Песня'));
     p.appendChild(chipRow(TPLS.map(function (tp) { return { label: tp.label, on: false, fn: function () { autoCut(tp); } }; }), 'Стиль'));
@@ -5056,7 +5092,27 @@ body.ed-open { overflow: hidden; }
   }
 
   /* ---------- tab: format ---------- */
+  var PLATS = [
+    { k: 'reels', label: 'Reels', r: '9:16', q: 720, max: 90 },
+    { k: 'tiktok', label: 'TikTok', r: '9:16', q: 720, max: 60 },
+    { k: 'shorts', label: 'Shorts', r: '9:16', q: 720, max: 60 },
+    { k: 'yt', label: 'YouTube', r: '16:9', q: 1080, max: 0 },
+    { k: 'post', label: 'Пост 1:1', r: '1:1', q: 1080, max: 60 }
+  ], platform = '';
+  function saveCover() {
+    pause(); draw();
+    cv.toBlob(function (b) {
+      if (!b) { toast('Не получилось сохранить кадр'); return; }
+      var u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'oblozhka-' + Date.now().toString(36) + '.png'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 4000); toast('Обложка сохранена (кадр на текущей секунде)');
+    }, 'image/png');
+  }
   function paneFmt(p) {
+    p.appendChild(chipRow(PLATS.map(function (pl) { return { label: pl.label, on: platform === pl.k, fn: function () { platform = pl.k; ratioKey = pl.r; quality = pl.q; applySize(); paintPane(); } }; }), 'Площадка'));
+    var pl0 = PLATS.filter(function (x) { return x.k === platform; })[0];
+    if (pl0 && pl0.max && total > pl0.max + 0.5) p.appendChild(el('div', 'ed-hint', 'Ролик ' + fmt(total) + ' длиннее ' + pl0.max + ' с для «' + pl0.label + '»: обрежь клипы или выбери длину 15/30 с в «Шаблонах».'));
+    else if (pl0) p.appendChild(el('div', 'ed-hint', 'Выставлено: ' + pl0.r + ', ' + pl0.q + 'p' + (pl0.max ? ', длина до ' + pl0.max + ' с' : '') + '. Ролик сейчас ' + fmt(total) + '.'));
+    p.appendChild(chipRow([{ label: '🖼 Сохранить обложку (кадр)', fn: saveCover }], 'Обложка'));
     p.appendChild(chipRow(Object.keys(RATIOS).map(function (k) { return { label: k + (k === '9:16' ? ' рилсы' : k === '1:1' ? ' квадрат' : ' широкий'), on: ratioKey === k, fn: function () { ratioKey = k; applySize(); paintPane(); } }; }), 'Формат'));
     p.appendChild(chipRow([540, 720, 1080].map(function (q) { return { label: q + 'p', on: quality === q, fn: function () { quality = q; applySize(); paintPane(); } }; }), 'Качество'));
     p.appendChild(chipRow([
