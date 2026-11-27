@@ -534,7 +534,7 @@ body.ed-open { overflow: hidden; }
     <button class="ghost" id="carBtn" type="button">Авто</button>
     <button class="ghost" id="djBtn" type="button">DJ</button>
     <button class="ghost" id="karBtn" type="button">Караоке</button>
-    <button class="ghost" id="alrBtn" type="button">Будильник</button>
+    <button class="ghost" id="alrBtn" type="button" hidden>Будильник</button>
     <button class="ghost" id="edBtn" type="button">Монтаж</button>
     <button class="ghost" id="setBtn" type="button">Настройки</button>
     <label class="btn" for="fileInput" id="addBtn">
@@ -2268,7 +2268,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '32.ae8572';
+  var APP_VERSION = '33.08d854';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -3429,7 +3429,7 @@ body.ed-open { overflow: hidden; }
   $('#alrStop').addEventListener('click', stop);
   $('#alrSnooze').addEventListener('click', snooze);
   document.addEventListener('visibilitychange', function () { if (!document.hidden && cfg.on) { wake(true); check(); } });
-  if (cfg.on) { cfg.on = true; startCheck(); }
+  if (cfg.on) { cfg.on = false; save(); } /* v33: кнопка скрыта, веб-будильник не работает при погашенном экране */
   window.Alarm = { open: open };
 })();
 

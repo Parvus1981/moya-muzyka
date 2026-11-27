@@ -85,6 +85,6 @@
   $('#alrStop').addEventListener('click', stop);
   $('#alrSnooze').addEventListener('click', snooze);
   document.addEventListener('visibilitychange', function () { if (!document.hidden && cfg.on) { wake(true); check(); } });
-  if (cfg.on) { cfg.on = true; startCheck(); }
+  if (cfg.on) { cfg.on = false; save(); } /* v33: кнопка скрыта, веб-будильник не работает при погашенном экране */
   window.Alarm = { open: open };
 })();
