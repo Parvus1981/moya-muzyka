@@ -2268,7 +2268,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '30.05a374';
+  var APP_VERSION = '31.8b3efa';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -5387,6 +5387,23 @@ body.ed-open { overflow: hidden; }
     });
   }
 
+  function lyricsToTitles() {
+    var L = music.id && window.Karaoke ? Karaoke.linesFor(music.id) : null;
+    if (!music.id) { toast('Сначала выбери песню на вкладке «Музыка»'); return; }
+    if (!L) { toast('У песни нет текста со временем: открой «Караоке» и расставь строки'); return; }
+    titles = titles.filter(function (x) { return !x.lyr; });
+    var n = 0;
+    L.forEach(function (l, i) {
+      var st = l.t - music.start; if (st >= total - 0.3) return;
+      var nx = L[i + 1] ? L[i + 1].t - music.start : st + 4, dur = Math.min(Math.max(1, nx - st - 0.05), 6);
+      if (st + dur <= 0) return;
+      if (st < 0) { dur += st; st = 0; if (dur < 0.8) return; }
+      titles.push({ text: l.w.slice(0, 140), start: st, dur: Math.min(dur, total - st), pos: 'bottom', size: 'M', style: 'tiktok', anim: 'karaoke', lyr: true }); n++;
+    });
+    selT = titles.length ? 0 : -1; setTime(0); pause();
+    toast(n ? 'Добавлено строк: ' + n : 'В выбранный кусок песни слов не попало');
+    paintPane();
+  }
   /* ---------- tab: titles ---------- */
   function paneTitles(p) {
     var items = titles.map(function (tt, i) { return { label: (i + 1) + '. ' + (tt.text || '…').slice(0, 14), on: i === selT, fn: function () { selT = i; setTime(tt.start + 0.3); pause(); paintPane(); } }; });
@@ -5394,6 +5411,7 @@ body.ed-open { overflow: hidden; }
       titles.push({ text: 'Текст', start: Math.min(t, Math.max(0, total - 1)), dur: Math.min(3, Math.max(1, total - t) || 3), pos: 'bottom', size: 'M', style: 'white' });
       selT = titles.length - 1; paintPane(); } });
     p.appendChild(chipRow(items));
+    p.appendChild(chipRow([{ label: '🎤 Текст песни → титры', fn: lyricsToTitles }, { label: 'Убрать текст песни', fn: function () { titles = titles.filter(function (x) { return !x.lyr; }); selT = titles.length ? 0 : -1; toast('Текст песни убран'); paintPane(); } }], 'Караоке'));
     var tt = titles[selT];
     if (!tt) { p.appendChild(el('div', 'ed-hint', 'Нажми «+ Титр», чтобы добавить надпись. Она появится с текущего места перемотки.')); return; }
     var ta = el('textarea', 'search'); ta.value = tt.text; ta.placeholder = 'Текст титра'; ta.maxLength = 140;
