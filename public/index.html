@@ -416,6 +416,41 @@ body.dj-open { overflow: hidden; }
   .dk-row > label { width: 44px; }
 }
 
+/* ---- Караоке ---- */
+.kar { position: fixed; inset: 0; z-index: 10; background: radial-gradient(120% 80% at 50% 0%, #1a1408 0%, var(--bg) 60%); display: flex; flex-direction: column;
+  padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.kar[hidden] { display: none !important; }
+body.kar-open { overflow: hidden; }
+.kar-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 0 8px; }
+.kar-top strong { font-family: var(--font-display); font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kar-view { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 18px; }
+.kar-view.free { overflow-y: auto; overscroll-behavior: contain; }
+.kar-lines { display: flex; flex-direction: column; gap: 18px; padding: 24px 6px; will-change: transform; transition: transform 0.5s cubic-bezier(.2,.8,.2,1); }
+.kar-view.free .kar-lines { transform: none !important; transition: none; }
+.kl { text-align: center; font-family: var(--font-display); font-weight: 700; font-size: var(--ks, 26px); line-height: 1.25; letter-spacing: -0.01em; color: rgba(255,255,255,0.34);
+  transition: opacity 0.3s, transform 0.4s, color 0.3s; transform: scale(0.94); cursor: pointer; overflow-wrap: anywhere; }
+.kar-view.free .kl { color: rgba(255,255,255,0.8); transform: none; }
+.kl.past { color: rgba(255,255,255,0.46); }
+.kl.on { color: #fff; transform: scale(1.07); text-shadow: 0 0 26px color-mix(in srgb, var(--accent) 35%, transparent); }
+.kl.on .kw { background-image: linear-gradient(90deg, var(--accent) var(--f, 0%), rgba(255,255,255,0.62) var(--f, 0%)); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.kw { display: inline-block; }
+.kar-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; text-align: center; padding: 20px; color: var(--muted, #9aa0aa); font-size: 15px; }
+.kar-empty[hidden] { display: none; }
+.kar-bar { display: flex; align-items: center; gap: 10px; padding: 12px 2px 6px; font-family: var(--font-mono, monospace); font-size: 12px; color: var(--muted, #9aa0aa); }
+.kar-bar input[type=range] { flex: 1; min-width: 0; }
+.kar-play { flex: none; width: 52px; height: 52px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #0b0c0f; background: var(--accent); box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 40%, transparent); }
+.kar-play svg { width: 24px; height: 24px; }
+.kar-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
+.kar-sync, .kar-edit { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: #0e1014; border-top: 1px solid var(--metal-edge, #2a2e37); padding: 14px max(14px, env(safe-area-inset-left, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; }
+.kar-sync[hidden], .kar-edit[hidden] { display: none; }
+.kar-edit { top: 0; align-content: start; padding-top: calc(12px + env(safe-area-inset-top, 0px)); background: var(--bg); }
+.kar-edit textarea { width: 100%; min-height: 46vh; resize: vertical; background: #11141a; color: #fff; border: 1px solid var(--metal-edge, #2a2e37); border-radius: 12px; padding: 12px; font: 16px/1.4 inherit; box-sizing: border-box; }
+.kar-next { text-align: center; font-family: var(--font-display); font-size: 22px; font-weight: 700; min-height: 2.6em; color: #fff; }
+.kar-prev { text-align: center; font-size: 14px; color: rgba(255,255,255,0.4); min-height: 1.4em; }
+.kar-tap { height: 96px; border-radius: 20px; border: 0; font-family: var(--font-display); font-weight: 800; font-size: 22px; color: #0b0c0f; background: var(--accent); box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 35%, transparent); touch-action: manipulation; }
+.kar-tap:active { transform: scale(0.985); filter: brightness(1.08); }
+.kar-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
 
 /* ---- Монтаж ---- */
 .ed { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; flex-direction: column; overflow: hidden;
@@ -480,6 +515,7 @@ body.ed-open { overflow: hidden; }
     <div class="hbtns">
     <button class="ghost" id="carBtn" type="button">Авто</button>
     <button class="ghost" id="djBtn" type="button">DJ</button>
+    <button class="ghost" id="karBtn" type="button">Караоке</button>
     <button class="ghost" id="edBtn" type="button">Монтаж</button>
     <button class="ghost" id="setBtn" type="button">Настройки</button>
     <label class="btn" for="fileInput" id="addBtn">
@@ -708,6 +744,38 @@ body.ed-open { overflow: hidden; }
   </div>
 </div>
 <div class="dj-toast" id="djToast" hidden></div>
+
+<div class="kar" id="kar" hidden role="dialog" aria-label="Караоке">
+  <div class="kar-top"><strong id="karTitle">Караоке</strong><button class="ghost" id="karClose" type="button">Закрыть</button></div>
+  <div class="kar-view" id="karView">
+    <div class="kar-lines" id="karLines"></div>
+    <div class="kar-empty" id="karEmpty" hidden>
+      <div>У этой песни пока нет текста.<br>Вставь текст песни (или файл .lrc с временем), потом расставь строки под музыку: это займёт одну прослушку.</div>
+      <div><button class="ghost" id="karAddTxt" type="button">Вставить текст</button></div>
+    </div>
+    <div class="kar-sync" id="karSync" hidden>
+      <div class="kar-prev" id="karPrev"></div>
+      <div class="kar-next" id="karNext"></div>
+      <button class="kar-tap" id="karTap" type="button">Строка началась</button>
+      <div class="kar-row">
+        <button class="ghost" id="karUndo" type="button">Назад на строку</button>
+        <button class="ghost" id="karRestart" type="button">С начала песни</button>
+        <button class="ghost" id="karSyncX" type="button">Отмена</button>
+      </div>
+    </div>
+  </div>
+  <div class="kar-bar">
+    <button class="kar-play" id="karPlay" type="button" aria-label="Играть или пауза"></button>
+    <span id="karT">0:00</span><input id="karSeek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Перемотка"><span id="karD">0:00</span>
+  </div>
+  <div class="kar-chips" id="karChips"></div>
+  <div class="kar-edit" id="karEdit" hidden>
+    <strong>Текст песни</strong>
+    <div class="hint2">Вставь текст: одна строка песни на строку. Если в тексте уже есть время вида [01:23.45], строки сразу встанут на места.</div>
+    <textarea id="karTa" spellcheck="false" autocomplete="off" placeholder="Текст песни..."></textarea>
+    <div class="kar-row"><button class="ghost" id="karSave" type="button">Сохранить</button><button class="ghost" id="karCancel" type="button">Отмена</button><button class="ghost" id="karDel" type="button">Удалить текст</button></div>
+  </div>
+</div>
 
 
 <div class="ed" id="ed" hidden role="dialog" aria-label="Монтаж">
@@ -1799,7 +1867,7 @@ body.ed-open { overflow: hidden; }
   var sound = { bass: 0, mid: 0, tre: 0, gain: 100, night: false };
   try { var ss = JSON.parse(lsGet('mm.sound') || 'null'); if (ss) sound = Object.assign(sound, ss); } catch (e) {}
   var SOUND_PRESETS = [['Обычный', 0, 0, 0], ['Бас', 7, 0, 1], ['Голос', -3, 4, 2], ['Яркий', 2, 0, 6], ['Кино', 4, 3, 2]];
-  var actx = null, nBass, nMid, nTre, nPre, nComp, gA;
+  var actx = null, nBass, nMid, nTre, nPre, nComp, gA, vIn, vDry, vK, vocalOn = false;
   function saveSound() { lsSet('mm.sound', JSON.stringify(sound)); }
   function ensureGraph() {
     if (actx) return true;
@@ -1814,10 +1882,27 @@ body.ed-open { overflow: hidden; }
       nTre = actx.createBiquadFilter(); nTre.type = 'highshelf'; nTre.frequency.value = 6500;
       nPre = actx.createGain();
       nComp = actx.createDynamicsCompressor();
-      srcA.connect(gA); gA.connect(nBass); srcB.connect(nBass); srcC.connect(nBass); nBass.connect(nMid); nMid.connect(nTre); nTre.connect(nPre); nPre.connect(nComp); nComp.connect(actx.destination);
+      vIn = actx.createGain(); vDry = actx.createGain(); vK = actx.createGain(); vK.gain.value = 0;
+      srcA.connect(gA); gA.connect(vIn); srcB.connect(vIn); srcC.connect(nBass); vIn.connect(vDry); vDry.connect(nBass);
+      /* «Минус»: голос обычно в центре, поэтому вычитаем правый канал из левого; низкие частоты оставляем, чтобы бас и бочка не пропали */
+      var spl = actx.createChannelSplitter(2), invR = actx.createGain(); invR.gain.value = -1;
+      var side = actx.createGain(), hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 160;
+      var lo = actx.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 160; var loG = actx.createGain(); loG.gain.value = 0.5;
+      var kmix = actx.createGain(); kmix.gain.value = 1.6;
+      vIn.connect(spl); spl.connect(side, 0); spl.connect(invR, 1); invR.connect(side); side.connect(hp); hp.connect(kmix);
+      spl.connect(loG, 0); spl.connect(loG, 1); loG.connect(lo); lo.connect(kmix); kmix.connect(vK); vK.connect(nBass);
+      nBass.connect(nMid); nMid.connect(nTre); nTre.connect(nPre); nPre.connect(nComp); nComp.connect(actx.destination);
       if (aMuted) setAMute(true);
       return true;
     } catch (e) { actx = null; return false; }
+  }
+  function setVocalCut(on) {
+    if (on && !ensureGraph()) return false;
+    vocalOn = !!on; if (!actx) return true;
+    if (actx.state === 'suspended') actx.resume().catch(function () {});
+    var now = actx.currentTime;
+    vDry.gain.setTargetAtTime(on ? 0 : 1, now, 0.03); vK.gain.setTargetAtTime(on ? 1 : 0, now, 0.03);
+    return true;
   }
   function applySound() {
     var neutral = !sound.bass && !sound.mid && !sound.tre && sound.gain === 100 && !sound.night;
@@ -2148,7 +2233,7 @@ body.ed-open { overflow: hidden; }
 
   /* ---- installed-app mode (only on the real web address, not inside Claude) ---- */
   var STANDALONE = !(window.claude && window.claude.use);
-  var APP_VERSION = '28.0e4e06';
+  var APP_VERSION = '29.6d7a6e';
   var swReg = null, installEvt = null;
   if (STANDALONE) {
     downloads = {
@@ -2247,7 +2332,13 @@ body.ed-open { overflow: hidden; }
     pauseMain: function () { try { A.pause(); B.pause(); C.pause(); } catch (e) {} },
     closeSheet: closeSheet,
     addFiles: addFiles,
-    toast: toast
+    toast: toast,
+    cur: function () { return curId; },
+    audio: function () { return audio; },
+    play: play,
+    togglePlay: togglePlay,
+    setVocalCut: setVocalCut,
+    vocalCut: function () { return vocalOn; }
   };
 })();
 </script>
@@ -3025,6 +3116,192 @@ body.ed-open { overflow: hidden; }
     }).catch(function () { return null; });
   }
   window.DJ = { open: openDj, load: function (k, id) { openDj(); if (openNow) loadDeck(k, id); }, analyzeTrack: analyzeTrack, analyzeBlob: analyzeBlob, findHook: findHook };
+})();
+
+</script>
+<script>
+/* ---- Караоке: текст песни, подсветка слов в такт, «Минус», расстановка времени тапами ---- */
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var store = {};
+  try { store = JSON.parse(localStorage.getItem('mm.kar') || '{}') || {}; } catch (e) {}
+  function save() { try { localStorage.setItem('mm.kar', JSON.stringify(store)); } catch (e) { MM.toast('Не хватило места, текст не сохранён'); } }
+  var id = null, data = null, idx = -2, raf = 0, syncing = false, syncI = 0, syncLines = null, size = 26, OFFSET = 0.18, lastWords = null;
+  try { var sz = parseInt(localStorage.getItem('mm.karsize'), 10); if (sz >= 18 && sz <= 40) size = sz; } catch (e) {}
+
+  function fmtT(s) { s = Math.max(0, s || 0); var m = Math.floor(s / 60), r = s - m * 60; return m + ':' + (r < 10 ? '0' : '') + Math.floor(r); }
+  function stamp(t) { var m = Math.floor(t / 60), r = t - m * 60; return '[' + (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r.toFixed(2) + ']'; }
+  function synced(d) { return !!(d && d.lines.length && d.lines.every(function (l) { return l.t != null; })); }
+
+  function parse(text) {
+    var lines = [], re = /\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+      var s = raw.replace(/<\d+:\d+(?:[.:]\d+)?>/g, ''), stamps = [], m, body = s;
+      re.lastIndex = 0;
+      while ((m = re.exec(s))) { var frac = m[3] ? parseFloat('0.' + m[3]) : 0; stamps.push(parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + frac); }
+      body = s.replace(re, '').replace(/\s+/g, ' ').trim();
+      if (!body) return;
+      if (/^(ar|ti|al|by|offset|length|re|ve):/i.test(body)) return;
+      if (stamps.length) stamps.forEach(function (t) { lines.push({ t: t, w: body }); });
+      else lines.push({ t: null, w: body });
+    });
+    if (lines.some(function (l) { return l.t != null; })) {
+      lines = lines.filter(function (l) { return l.t != null; }).sort(function (a, b) { return a.t - b.t; });
+    }
+    return lines;
+  }
+  function serialize(d) {
+    if (!d) return '';
+    return d.lines.map(function (l) { return (l.t != null ? stamp(l.t) + ' ' : '') + l.w; }).join('\n');
+  }
+
+  function load(tid) { id = tid; data = tid && store[tid] ? store[tid] : null; idx = -2; buildLines(); }
+  function buildLines() {
+    var box = $('#karLines'); box.textContent = ''; lastWords = null;
+    $('#karEmpty').hidden = !!(data && data.lines.length);
+    $('#karView').classList.toggle('free', !synced(data));
+    if (!data) return;
+    data.lines.forEach(function (l, i) {
+      var d = document.createElement('div'); d.className = 'kl'; d.dataset.i = i;
+      l.w.split(' ').forEach(function (w, j, arr) {
+        var sp = document.createElement('span'); sp.className = 'kw'; sp.textContent = w; d.appendChild(sp);
+        if (j < arr.length - 1) d.appendChild(document.createTextNode(' '));
+      });
+      d.addEventListener('click', function () {
+        if (syncing || l.t == null) return;
+        var a = MM.audio(); try { a.currentTime = Math.max(0, l.t - 0.05); } catch (e) {} a.play().catch(function () {});
+      });
+      box.appendChild(d);
+    });
+    $('#karView').style.setProperty('--ks', size + 'px');
+    box.parentNode.style.setProperty('--ks', size + 'px');
+  }
+  function lineAt(t) {
+    if (!synced(data)) return -1;
+    var L = data.lines, lo = 0, hi = L.length - 1, r = -1;
+    while (lo <= hi) { var mid = (lo + hi) >> 1; if (L[mid].t <= t) { r = mid; lo = mid + 1; } else hi = mid - 1; }
+    return r;
+  }
+  function center(i) {
+    var box = $('#karLines'), view = $('#karView'), el = box.children[Math.max(0, i)]; if (!el) return;
+    var y = view.clientHeight * 0.42 - (el.offsetTop + el.offsetHeight / 2);
+    box.style.transform = 'translateY(' + Math.round(y) + 'px)';
+  }
+  function paintIdx(i) {
+    var kids = $('#karLines').children, j;
+    for (j = 0; j < kids.length; j++) { kids[j].classList.toggle('on', j === i); kids[j].classList.toggle('past', j < i); }
+    lastWords = i >= 0 && kids[i] ? kids[i].querySelectorAll('.kw') : null;
+    if (synced(data)) center(i);
+  }
+  function tick() {
+    raf = 0; if ($('#kar').hidden) return;
+    if (MM.cur() !== id) { load(MM.cur()); paintTitle(); paintChips(); }
+    var a = MM.audio(), t = a.currentTime || 0, dur = isFinite(a.duration) ? a.duration : 0;
+    if (!$('#karSeek').matches(':active')) { $('#karSeek').max = dur || 100; $('#karSeek').value = t; }
+    $('#karT').textContent = fmtT(t); $('#karD').textContent = fmtT(dur);
+    $('#karPlay').innerHTML = a.paused ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+    if (synced(data) && !syncing) {
+      var i = lineAt(t + 0.04);
+      if (i !== idx) { idx = i; paintIdx(i); }
+      if (i >= 0 && lastWords) {
+        var L = data.lines, cur = L[i], next = L[i + 1], gap = next ? next.t - cur.t : 8, chars = cur.w.replace(/\s/g, '').length;
+        var sung = Math.min(Math.max(1.0, chars * 0.085), 9), span = Math.max(0.5, Math.min(sung, gap * 0.94));
+        var P = Math.min(1, Math.max(0, (t - cur.t) / span)) * chars, cum = 0;
+        lastWords.forEach(function (w) {
+          var n = w.textContent.length, f = Math.min(1, Math.max(0, (P - cum) / n)); cum += n;
+          w.style.setProperty('--f', (f * 100).toFixed(1) + '%');
+        });
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+  function paintTitle() { var t = MM.find(id); $('#karTitle').textContent = t ? t.title : 'Караоке'; }
+  function chip(label, on, fn) { var b = document.createElement('button'); b.type = 'button'; b.className = 'chip' + (on ? ' on' : ''); b.textContent = label; b.addEventListener('click', fn); return b; }
+  function shift(dt) {
+    if (!synced(data)) return;
+    data.lines.forEach(function (l) { l.t = Math.max(0, l.t + dt); }); store[id] = data; save(); idx = -2;
+    MM.toast('Строки сдвинуты на ' + (dt > 0 ? '+' : '') + dt.toFixed(1).replace('.', ',') + ' с');
+  }
+  function paintChips() {
+    var box = $('#karChips'); box.textContent = '';
+    box.appendChild(chip(MM.vocalCut() ? '✓ Минус (голос тише)' : 'Минус (голос тише)', MM.vocalCut(), function () {
+      var on = !MM.vocalCut(); if (!MM.setVocalCut(on)) { MM.toast('Здесь не получилось включить «Минус»'); return; }
+      MM.toast(on ? 'Минус включён: голос приглушён (лучше работает на стерео-песнях)' : 'Минус выключен'); paintChips();
+    }));
+    box.appendChild(chip('Текст', false, openEdit));
+    box.appendChild(chip(synced(data) ? 'Переставить время' : 'Расставить время', false, startSync));
+    if (synced(data)) { box.appendChild(chip('Раньше −0,1', false, function () { shift(-0.1); })); box.appendChild(chip('Позже +0,1', false, function () { shift(0.1); })); }
+    box.appendChild(chip('A−', false, function () { setSize(size - 2); }));
+    box.appendChild(chip('A+', false, function () { setSize(size + 2); }));
+  }
+  function setSize(v) {
+    size = Math.max(18, Math.min(40, v)); try { localStorage.setItem('mm.karsize', String(size)); } catch (e) {}
+    $('#karView').style.setProperty('--ks', size + 'px'); setTimeout(function () { center(idx); }, 30);
+  }
+  /* --- ввод текста --- */
+  function openEdit() { $('#karTa').value = serialize(data); $('#karEdit').hidden = false; }
+  function saveEdit() {
+    var lines = parse($('#karTa').value);
+    if (!lines.length) { MM.toast('Текст пустой'); return; }
+    data = { lines: lines }; store[id] = data; save(); $('#karEdit').hidden = true; buildLines(); paintChips(); idx = -2;
+    MM.toast(synced(data) ? 'Текст со временем сохранён' : 'Текст сохранён: теперь расставь время');
+    if (!synced(data)) startSync();
+  }
+  /* --- расстановка времени --- */
+  function startSync() {
+    if (!data || !data.lines.length) { openEdit(); return; }
+    syncing = true; syncI = 0; syncLines = data.lines.map(function (l) { return { t: null, w: l.w }; });
+    $('#karSync').hidden = false; $('#karView').classList.add('free'); paintSync();
+    var a = MM.audio(); try { a.currentTime = 0; } catch (e) {} a.play().catch(function () {});
+    MM.toast('Слушай песню и нажимай большую кнопку, когда начинается строка');
+  }
+  function paintSync() {
+    $('#karPrev').textContent = syncI > 0 ? syncLines[syncI - 1].w : '';
+    $('#karNext').textContent = syncLines[syncI] ? syncLines[syncI].w : '';
+    $('#karTap').textContent = 'Строка началась (' + (syncI + 1) + ' из ' + syncLines.length + ')';
+  }
+  function tap() {
+    if (!syncing) return;
+    var a = MM.audio(), t = Math.max(0, (a.currentTime || 0) - OFFSET), prev = syncI > 0 ? syncLines[syncI - 1].t : 0;
+    syncLines[syncI].t = Math.max(prev + 0.05, t); syncI++;
+    if (syncI >= syncLines.length) { finishSync(true); return; }
+    paintSync();
+  }
+  function undo() { if (!syncing || syncI <= 0) return; syncI--; syncLines[syncI].t = null; var a = MM.audio(); try { a.currentTime = Math.max(0, (syncI > 0 ? syncLines[syncI - 1].t : 0) - 1.5); } catch (e) {} paintSync(); }
+  function finishSync(ok) {
+    syncing = false; $('#karSync').hidden = true;
+    if (ok) {
+      data = { lines: syncLines }; store[id] = data; save();
+      var a = MM.audio(); try { a.currentTime = Math.max(0, data.lines[0].t - 2); } catch (e) {}
+      MM.toast('Готово! Если строки чуть опаздывают или спешат, сдвинь кнопками «Раньше» и «Позже»');
+    }
+    syncLines = null; idx = -2; buildLines(); paintChips();
+  }
+  /* --- открыть / закрыть --- */
+  function open() {
+    if (!MM.cur()) { MM.toast('Сначала включи песню, потом открой караоке'); return; }
+    var t = MM.find(MM.cur()); if (t && MM.isVid(t)) { MM.toast('Караоке работает с песнями, не с фильмами'); return; }
+    document.body.classList.add('kar-open'); $('#kar').hidden = false; load(MM.cur()); paintTitle(); paintChips();
+    if (!data) { /* пустой экран подскажет, что делать */ }
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function close() { if (syncing) finishSync(false); $('#kar').hidden = true; $('#karEdit').hidden = true; document.body.classList.remove('kar-open'); }
+  var btn = $('#karBtn'); if (btn) btn.addEventListener('click', open);
+  $('#karClose').addEventListener('click', close);
+  $('#karPlay').addEventListener('click', function () { MM.togglePlay(); });
+  $('#karSeek').addEventListener('input', function () { try { MM.audio().currentTime = parseFloat(this.value); } catch (e) {} });
+  $('#karAddTxt').addEventListener('click', openEdit);
+  $('#karSave').addEventListener('click', saveEdit);
+  $('#karCancel').addEventListener('click', function () { $('#karEdit').hidden = true; });
+  $('#karDel').addEventListener('click', function () { delete store[id]; save(); data = null; $('#karEdit').hidden = true; idx = -2; buildLines(); paintChips(); MM.toast('Текст удалён'); });
+  $('#karTap').addEventListener('click', tap);
+  $('#karUndo').addEventListener('click', undo);
+  $('#karRestart').addEventListener('click', function () { if (!syncing) return; syncI = 0; syncLines.forEach(function (l) { l.t = null; }); var a = MM.audio(); try { a.currentTime = 0; } catch (e) {} a.play().catch(function () {}); paintSync(); });
+  $('#karSyncX').addEventListener('click', function () { finishSync(false); });
+  window.Karaoke = {
+    open: open,
+    linesFor: function (tid) { var d = store[tid]; return synced(d) ? d.lines.map(function (l) { return { t: l.t, w: l.w }; }) : null; }
+  };
 })();
 
 </script>

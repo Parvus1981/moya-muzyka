@@ -293,6 +293,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
   body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 }
 /*DJ_CSS*/
+/*KAR_CSS*/
 
 /*ED_CSS*/
 </style>
@@ -306,6 +307,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     <div class="hbtns">
     <button class="ghost" id="carBtn" type="button">Авто</button>
     <button class="ghost" id="djBtn" type="button">DJ</button>
+    <button class="ghost" id="karBtn" type="button">Караоке</button>
     <button class="ghost" id="edBtn" type="button">Монтаж</button>
     <button class="ghost" id="setBtn" type="button">Настройки</button>
     <label class="btn" for="fileInput" id="addBtn">
@@ -494,6 +496,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 </div>
 
 <!--DJ_HTML-->
+<!--KAR_HTML-->
 
 <!--ED_HTML-->
 <script>
@@ -1498,7 +1501,7 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
   var sound = { bass: 0, mid: 0, tre: 0, gain: 100, night: false };
   try { var ss = JSON.parse(lsGet('mm.sound') || 'null'); if (ss) sound = Object.assign(sound, ss); } catch (e) {}
   var SOUND_PRESETS = [['Обычный', 0, 0, 0], ['Бас', 7, 0, 1], ['Голос', -3, 4, 2], ['Яркий', 2, 0, 6], ['Кино', 4, 3, 2]];
-  var actx = null, nBass, nMid, nTre, nPre, nComp, gA;
+  var actx = null, nBass, nMid, nTre, nPre, nComp, gA, vIn, vDry, vK, vocalOn = false;
   function saveSound() { lsSet('mm.sound', JSON.stringify(sound)); }
   function ensureGraph() {
     if (actx) return true;
@@ -1513,10 +1516,27 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
       nTre = actx.createBiquadFilter(); nTre.type = 'highshelf'; nTre.frequency.value = 6500;
       nPre = actx.createGain();
       nComp = actx.createDynamicsCompressor();
-      srcA.connect(gA); gA.connect(nBass); srcB.connect(nBass); srcC.connect(nBass); nBass.connect(nMid); nMid.connect(nTre); nTre.connect(nPre); nPre.connect(nComp); nComp.connect(actx.destination);
+      vIn = actx.createGain(); vDry = actx.createGain(); vK = actx.createGain(); vK.gain.value = 0;
+      srcA.connect(gA); gA.connect(vIn); srcB.connect(vIn); srcC.connect(nBass); vIn.connect(vDry); vDry.connect(nBass);
+      /* «Минус»: голос обычно в центре, поэтому вычитаем правый канал из левого; низкие частоты оставляем, чтобы бас и бочка не пропали */
+      var spl = actx.createChannelSplitter(2), invR = actx.createGain(); invR.gain.value = -1;
+      var side = actx.createGain(), hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 160;
+      var lo = actx.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 160; var loG = actx.createGain(); loG.gain.value = 0.5;
+      var kmix = actx.createGain(); kmix.gain.value = 1.6;
+      vIn.connect(spl); spl.connect(side, 0); spl.connect(invR, 1); invR.connect(side); side.connect(hp); hp.connect(kmix);
+      spl.connect(loG, 0); spl.connect(loG, 1); loG.connect(lo); lo.connect(kmix); kmix.connect(vK); vK.connect(nBass);
+      nBass.connect(nMid); nMid.connect(nTre); nTre.connect(nPre); nPre.connect(nComp); nComp.connect(actx.destination);
       if (aMuted) setAMute(true);
       return true;
     } catch (e) { actx = null; return false; }
+  }
+  function setVocalCut(on) {
+    if (on && !ensureGraph()) return false;
+    vocalOn = !!on; if (!actx) return true;
+    if (actx.state === 'suspended') actx.resume().catch(function () {});
+    var now = actx.currentTime;
+    vDry.gain.setTargetAtTime(on ? 0 : 1, now, 0.03); vK.gain.setTargetAtTime(on ? 1 : 0, now, 0.03);
+    return true;
   }
   function applySound() {
     var neutral = !sound.bass && !sound.mid && !sound.tre && sound.gain === 100 && !sound.night;
@@ -1946,7 +1966,13 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
     pauseMain: function () { try { A.pause(); B.pause(); C.pause(); } catch (e) {} },
     closeSheet: closeSheet,
     addFiles: addFiles,
-    toast: toast
+    toast: toast,
+    cur: function () { return curId; },
+    audio: function () { return audio; },
+    play: play,
+    togglePlay: togglePlay,
+    setVocalCut: setVocalCut,
+    vocalCut: function () { return vocalOn; }
   };
 })();
 </script>
@@ -1961,6 +1987,9 @@ body.car .toast { bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
 </script>
 <script>
 /*DJ_JS*/
+</script>
+<script>
+/*KAR_JS*/
 </script>
 <script>
 

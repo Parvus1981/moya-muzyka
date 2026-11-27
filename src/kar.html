@@ -1,0 +1,31 @@
+<div class="kar" id="kar" hidden role="dialog" aria-label="Караоке">
+  <div class="kar-top"><strong id="karTitle">Караоке</strong><button class="ghost" id="karClose" type="button">Закрыть</button></div>
+  <div class="kar-view" id="karView">
+    <div class="kar-lines" id="karLines"></div>
+    <div class="kar-empty" id="karEmpty" hidden>
+      <div>У этой песни пока нет текста.<br>Вставь текст песни (или файл .lrc с временем), потом расставь строки под музыку: это займёт одну прослушку.</div>
+      <div><button class="ghost" id="karAddTxt" type="button">Вставить текст</button></div>
+    </div>
+    <div class="kar-sync" id="karSync" hidden>
+      <div class="kar-prev" id="karPrev"></div>
+      <div class="kar-next" id="karNext"></div>
+      <button class="kar-tap" id="karTap" type="button">Строка началась</button>
+      <div class="kar-row">
+        <button class="ghost" id="karUndo" type="button">Назад на строку</button>
+        <button class="ghost" id="karRestart" type="button">С начала песни</button>
+        <button class="ghost" id="karSyncX" type="button">Отмена</button>
+      </div>
+    </div>
+  </div>
+  <div class="kar-bar">
+    <button class="kar-play" id="karPlay" type="button" aria-label="Играть или пауза"></button>
+    <span id="karT">0:00</span><input id="karSeek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Перемотка"><span id="karD">0:00</span>
+  </div>
+  <div class="kar-chips" id="karChips"></div>
+  <div class="kar-edit" id="karEdit" hidden>
+    <strong>Текст песни</strong>
+    <div class="hint2">Вставь текст: одна строка песни на строку. Если в тексте уже есть время вида [01:23.45], строки сразу встанут на места.</div>
+    <textarea id="karTa" spellcheck="false" autocomplete="off" placeholder="Текст песни..."></textarea>
+    <div class="kar-row"><button class="ghost" id="karSave" type="button">Сохранить</button><button class="ghost" id="karCancel" type="button">Отмена</button><button class="ghost" id="karDel" type="button">Удалить текст</button></div>
+  </div>
+</div>

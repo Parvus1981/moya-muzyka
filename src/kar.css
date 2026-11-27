@@ -1,0 +1,34 @@
+/* ---- Караоке ---- */
+.kar { position: fixed; inset: 0; z-index: 10; background: radial-gradient(120% 80% at 50% 0%, #1a1408 0%, var(--bg) 60%); display: flex; flex-direction: column;
+  padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); }
+.kar[hidden] { display: none !important; }
+body.kar-open { overflow: hidden; }
+.kar-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 0 8px; }
+.kar-top strong { font-family: var(--font-display); font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kar-view { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 18px; }
+.kar-view.free { overflow-y: auto; overscroll-behavior: contain; }
+.kar-lines { display: flex; flex-direction: column; gap: 18px; padding: 24px 6px; will-change: transform; transition: transform 0.5s cubic-bezier(.2,.8,.2,1); }
+.kar-view.free .kar-lines { transform: none !important; transition: none; }
+.kl { text-align: center; font-family: var(--font-display); font-weight: 700; font-size: var(--ks, 26px); line-height: 1.25; letter-spacing: -0.01em; color: rgba(255,255,255,0.34);
+  transition: opacity 0.3s, transform 0.4s, color 0.3s; transform: scale(0.94); cursor: pointer; overflow-wrap: anywhere; }
+.kar-view.free .kl { color: rgba(255,255,255,0.8); transform: none; }
+.kl.past { color: rgba(255,255,255,0.46); }
+.kl.on { color: #fff; transform: scale(1.07); text-shadow: 0 0 26px color-mix(in srgb, var(--accent) 35%, transparent); }
+.kl.on .kw { background-image: linear-gradient(90deg, var(--accent) var(--f, 0%), rgba(255,255,255,0.62) var(--f, 0%)); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.kw { display: inline-block; }
+.kar-empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; text-align: center; padding: 20px; color: var(--muted, #9aa0aa); font-size: 15px; }
+.kar-empty[hidden] { display: none; }
+.kar-bar { display: flex; align-items: center; gap: 10px; padding: 12px 2px 6px; font-family: var(--font-mono, monospace); font-size: 12px; color: var(--muted, #9aa0aa); }
+.kar-bar input[type=range] { flex: 1; min-width: 0; }
+.kar-play { flex: none; width: 52px; height: 52px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #0b0c0f; background: var(--accent); box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 40%, transparent); }
+.kar-play svg { width: 24px; height: 24px; }
+.kar-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 calc(12px + env(safe-area-inset-bottom, 0px)); }
+.kar-sync, .kar-edit { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: #0e1014; border-top: 1px solid var(--metal-edge, #2a2e37); padding: 14px max(14px, env(safe-area-inset-left, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; }
+.kar-sync[hidden], .kar-edit[hidden] { display: none; }
+.kar-edit { top: 0; align-content: start; padding-top: calc(12px + env(safe-area-inset-top, 0px)); background: var(--bg); }
+.kar-edit textarea { width: 100%; min-height: 46vh; resize: vertical; background: #11141a; color: #fff; border: 1px solid var(--metal-edge, #2a2e37); border-radius: 12px; padding: 12px; font: 16px/1.4 inherit; box-sizing: border-box; }
+.kar-next { text-align: center; font-family: var(--font-display); font-size: 22px; font-weight: 700; min-height: 2.6em; color: #fff; }
+.kar-prev { text-align: center; font-size: 14px; color: rgba(255,255,255,0.4); min-height: 1.4em; }
+.kar-tap { height: 96px; border-radius: 20px; border: 0; font-family: var(--font-display); font-weight: 800; font-size: 22px; color: #0b0c0f; background: var(--accent); box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 35%, transparent); touch-action: manipulation; }
+.kar-tap:active { transform: scale(0.985); filter: brightness(1.08); }
+.kar-row { display: flex; flex-wrap: wrap; gap: 8px; }
