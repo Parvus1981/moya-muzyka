@@ -1405,7 +1405,7 @@
     var tb = el('input', 'search'); tb.type = 'text'; tb.maxLength = 60; tb.value = tplCta; tb.placeholder = 'Призыв в конце (по желанию)'; tb.setAttribute('autocomplete', 'off');
     tb.addEventListener('input', function () { tplCta = tb.value; });
     p.appendChild(tb);
-    p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с'], [0, music.id ? 'Вся песня' : '30 с']].map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
+    p.appendChild(chipRow([[15, '15 с'], [30, '30 с'], [60, '60 с']].concat(music.id ? [[0, 'Вся песня']] : []).map(function (x) { return { label: x[1], on: tplLen === x[0], fn: function () { tplLen = x[0]; paintPane(); } }; }), 'Длина'));
     if (music.id) p.appendChild(chipRow([{ label: tplHook ? '✓ Самый живой кусок песни' : 'Песня с начала', on: tplHook, fn: function () { tplHook = !tplHook; paintPane(); } }], 'Песня'));
     p.appendChild(chipRow(TPLS.map(function (tp) { return { label: tp.label, on: false, fn: function () { autoCut(tp); } }; }), 'Стиль'));
     if (tplStatus) p.appendChild(el('div', 'ed-hint', tplStatus));
