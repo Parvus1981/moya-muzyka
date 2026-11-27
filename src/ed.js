@@ -16,7 +16,7 @@
   var music = { id: null, title: '', el: null, node: null, gain: null, url: null, start: 0, vol: 0.8, fade: true, dur: 0, status: '' };
   var origVol = 1;
   var placing = false, chars = [], selC = -1, bgrid = { id: null, bpm: 120, off: 0, busy: false }, drag = null;
-  var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0;
+  var trans = { type: 'fade', dur: 0.6, scope: 'photos' }, kbAmt = 0.06, pulseAmt = 0, lookKey = 'none', vig = false;
   var tplLen = 30, tplText = '', tplCta = '', tplTheme = null, tplStatus = '', tplBusy = false, tplHook = true;
   var t = 0, playing = false, last = 0, cur = -1, raf = 0, openNow = false, wakeLock = null, toastT = 0, uiT = 0;
   var ctx = null, mix = null, dest = null;
@@ -210,7 +210,29 @@
 
   /* ---------- drawing ---------- */
   function srcSize(c) { return c.kind === 'image' ? [c.el.naturalWidth, c.el.naturalHeight] : [c.el.videoWidth, c.el.videoHeight]; }
+  var LOOKS = [
+    ['none', 'Без', ''],
+    ['cine', 'Кино', 'contrast(1.14) saturate(1.08) sepia(0.14) hue-rotate(-10deg) brightness(0.96)'],
+    ['warm', 'Тёплый', 'sepia(0.28) saturate(1.2) contrast(1.05) brightness(1.04)'],
+    ['cold', 'Холодный', 'hue-rotate(14deg) saturate(1.1) contrast(1.06) brightness(1.02)'],
+    ['vivid', 'Яркий', 'saturate(1.5) contrast(1.12) brightness(1.04)'],
+    ['vhs', 'VHS', 'saturate(1.45) contrast(1.15) sepia(0.22) blur(0.6px) brightness(1.02)'],
+    ['bw', 'Ч/Б', 'grayscale(1) contrast(1.18)'],
+    ['moody', 'Мрачный', 'contrast(1.22) saturate(0.8) brightness(0.86)']
+  ];
+  function lookCss() { for (var i = 0; i < LOOKS.length; i++) if (LOOKS[i][0] === lookKey) return LOOKS[i][2]; return ''; }
   function drawClip(c, idx, prog, alpha, dx, zx, srcOv) {
+    var f = srcOv ? '' : lookCss();
+    if (!f) return drawClip0(c, idx, prog, alpha, dx, zx, srcOv);
+    g.save(); g.filter = f;
+    try { drawClip0(c, idx, prog, alpha, dx, zx, srcOv); } finally { g.restore(); }
+  }
+  function drawVignette() {
+    var gr = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  }
+  function drawClip0(c, idx, prog, alpha, dx, zx, srcOv) {
     if (!c || !c.ready) return;
     if (c.kind === 'video' && c.el.readyState < 2) return;
     var sz = srcSize(c), sw = sz[0], sh = sz[1]; if (!sw || !sh) return;
@@ -1021,6 +1043,7 @@
     drawChars();
     drawOcclusion();
     drawGlue();
+    if (vig) drawVignette();
     drawTitles();
   }
 
@@ -1312,6 +1335,8 @@
     ], 'Где'));
     function K(v, label) { return { label: label, on: Math.abs(kbAmt - v) < 0.001, fn: function () { kbAmt = v; paintPane(); } }; }
     p.appendChild(chipRow([K(0, 'Нет'), K(0.06, 'Лёгкий'), K(0.12, 'Сильный')], 'Наезд'));
+    p.appendChild(chipRow(LOOKS.map(function (l) { return { label: l[1], on: lookKey === l[0], fn: function () { lookKey = l[0]; paintPane(); if (!playing) draw(); } }; }), 'Цвет'));
+    p.appendChild(chipRow([{ label: vig ? '✓ Виньетка' : 'Виньетка', on: vig, fn: function () { vig = !vig; paintPane(); if (!playing) draw(); } }], 'Края'));
     function PU(v, label) { return { label: label, on: Math.abs(pulseAmt - v) < 0.001, fn: function () { pulseAmt = v; paintPane(); } }; }
     p.appendChild(chipRow([PU(0, 'Нет'), PU(0.04, 'Лёгкий'), PU(0.09, 'Сильный')], 'Пульс в такт'));
     p.appendChild(el('div', 'ed-hint', 'Переход проходит вокруг стыка: конец одного кадра растворяется в начале следующего, общая длина ролика не меняется. «Наезд» слегка приближает и отдаляет каждое фото по очереди, чтобы кадр жил.'));
@@ -1328,10 +1353,10 @@
     { k: 'smooth', label: '🌊 Плавный', beats: 8, tr: { type: 'fade', dur: 0.8 }, kb: 0.1, pulse: 0, style: 'white', pos: 'bottom' }
   ];
   var THEMES = [
-    { k: 'auto', label: '🚗 Авто', hook: 'Тачка мечты', cta: 'Подробности в профиле', style: 'tiktok', anim: 'words', pos: 'mid', tip: 'Панч или Зум' },
-    { k: 'cafe', label: '☕ Заведение', hook: 'Сегодня в меню', cta: 'Ждём вас в гости!', style: 'plate', anim: 'fade', pos: 'bottom', tip: 'Плавный' },
-    { k: 'shop', label: '🛍 Магазин', hook: 'Новинка!', cta: 'Заказать: ссылка в профиле', style: 'yellow', anim: 'pop', pos: 'top', tip: 'Зум или Панч' },
-    { k: 'bday', label: '🎂 День рождения', hook: 'С днём рождения!', cta: 'Обнимаем и любим', style: 'accent', anim: 'pop', pos: 'mid', tip: 'Плавный или Сдвиг' }
+    { k: 'auto', label: '🚗 Авто', hook: 'Тачка мечты', cta: 'Подробности в профиле', style: 'tiktok', anim: 'words', pos: 'mid', tip: 'Панч или Зум', look: 'cine', vig: true },
+    { k: 'cafe', label: '☕ Заведение', hook: 'Сегодня в меню', cta: 'Ждём вас в гости!', style: 'plate', anim: 'fade', pos: 'bottom', tip: 'Плавный', look: 'warm', vig: false },
+    { k: 'shop', label: '🛍 Магазин', hook: 'Новинка!', cta: 'Заказать: ссылка в профиле', style: 'yellow', anim: 'pop', pos: 'top', tip: 'Зум или Панч', look: 'vivid', vig: false },
+    { k: 'bday', label: '🎂 День рождения', hook: 'С днём рождения!', cta: 'Обнимаем и любим', style: 'accent', anim: 'pop', pos: 'mid', tip: 'Плавный или Сдвиг', look: 'vivid', vig: true }
   ];
   function autoCut(tpl) {
     if (!clips.length) { toast('Сначала добавь фото или видео кнопкой «+»'); return; }
@@ -1379,6 +1404,7 @@
         clips = seq; sel = 0;
         ratioKey = '9:16'; applySize();
         trans = { type: tpl.tr.type, dur: tpl.tr.dur, scope: 'all' }; kbAmt = tpl.kb; pulseAmt = tpl.pulse;
+        if (tplTheme) { lookKey = tplTheme.look; vig = !!tplTheme.vig; }
         var th = tplTheme, tStyle = th ? th.style : tpl.style, tAnim = th ? th.anim : 'fade', tPos = th ? th.pos : tpl.pos;
         titles = [];
         if (tplText.trim()) titles.push({ text: tplText.trim(), start: 0.3, dur: Math.min(3.5, Math.max(1, T - 0.6)), pos: tPos, size: 'L', style: tStyle, anim: tAnim });
@@ -1528,7 +1554,7 @@
     });
   }
   function sigOf() {
-    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, pulseAmt, glue, titles, music.id, music.start, music.vol, music.fade,
+    return JSON.stringify([ratioKey, quality, origVol, trans, kbAmt, pulseAmt, lookKey, vig, glue, titles, music.id, music.start, music.vol, music.fade,
       chars.map(function (c) { return [c.bid, +c.x.toFixed(3), +c.y.toFixed(3), +c.size.toFixed(3), c.anim, c.amt, c.flip ? 1 : 0, c.blob ? 1 : 0, c.frames ? c.frames.length : 0, c.fb ? c.fb.filter(Boolean).length : 0, c.t0, c.t1, c.enter, c.exit, c.react ? 1 : 0, c.fx, c.say, c.sayS, c.grow || 1, c.behind ? 1 : 0, c.blend.on ? 1 : 0, c.blend.col, c.blend.shd, c.blend.soft, c.blend.grain, c.blend.light, c.blend.refl, c.blend.wrap, c.mouth.on ? 1 : 0, c.mouth.x, c.mouth.y, c.mouth.s]; }),
       clips.map(function (c) { return [c.bid, c.kind, c.name, c.src, +c.inp.toFixed(3), +c.out.toFixed(3), +c.dur.toFixed(3), c.fit, c.sound ? 1 : 0, c.thumb ? 1 : 0]; })]);
   }
@@ -1541,7 +1567,7 @@
     if (saving) { again = true; return; }
     var sig = sigOf(); if (!force && sig === lastSig) return;
     saving = true;
-    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, pulseAmt: pulseAmt, glue: glue, titles: titles,
+    var meta = { v: 1, ratioKey: ratioKey, quality: quality, origVol: origVol, trans: trans, kbAmt: kbAmt, pulseAmt: pulseAmt, lookKey: lookKey, vig: vig ? 1 : 0, glue: glue, titles: titles,
       music: { id: music.id, start: music.start, vol: music.vol, fade: music.fade },
       chars: chars.map(function (c) { return { bid: c.bid, x: c.x, y: c.y, size: c.size, grow: c.grow || 1, anim: c.anim, amt: c.amt, flip: c.flip, t0: c.t0, t1: c.t1, enter: c.enter, exit: c.exit, react: c.react, fx: c.fx, say: c.say, sayS: c.sayS, mouth: c.mouth, blend: c.blend, vid: c.frames ? c.frames.length : 0, fps: c.fps || 0, behind: c.behind ? 1 : 0 }; }),
       clips: clips.map(function (c) { return { bid: c.bid, kind: c.kind, name: c.name, src: c.src, inp: c.inp, out: c.out, dur: c.dur, fit: c.fit, sound: c.sound, thumb: c.thumb }; }) };
@@ -1572,6 +1598,7 @@
         if (meta.trans) trans = { type: meta.trans.type || 'fade', dur: meta.trans.dur || 0.6, scope: meta.trans.scope || 'photos' };
         if (meta.kbAmt != null) kbAmt = meta.kbAmt;
         if (meta.pulseAmt != null) pulseAmt = meta.pulseAmt;
+        if (meta.lookKey) lookKey = meta.lookKey; vig = !!meta.vig;
         if (meta.glue) Object.keys(meta.glue).forEach(function (k) { glue[k] = meta.glue[k]; });
         meta.clips.forEach(function (m) {
           var b = blobs[m.bid]; if (!b) return;
